@@ -1,0 +1,190 @@
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --ja: #dc2626;
+  --spuren: #f59e0b;
+  --nein: #16a34a;
+  --keine-daten: #6b7280;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.page {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 1rem 1rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-height: 100dvh;
+}
+
+.page__header {
+  text-align: center;
+}
+
+.page__title {
+  font-size: 2.25rem;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.page__subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+.page__loading {
+  text-align: center;
+  font-size: 1.1rem;
+  color: var(--muted);
+}
+
+.page__disclaimer {
+  margin-top: auto;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--muted);
+  text-align: center;
+  border-top: 1px solid var(--surface);
+  padding-top: 1rem;
+}
+
+/* Scanner */
+.scanner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.scanner__video {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border-radius: 1rem;
+  object-fit: cover;
+}
+
+.scanner__start {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 0.75rem;
+  background: #2563eb;
+  color: #fff;
+}
+
+.scanner__hint {
+  font-size: 1rem;
+  color: var(--spuren);
+  text-align: center;
+  margin: 0;
+}
+
+/* Manual entry */
+.manual-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.manual-entry label {
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.manual-entry__row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.manual-entry input {
+  flex: 1;
+  padding: 0.85rem;
+  font-size: 1.1rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--surface);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.manual-entry button {
+  padding: 0.85rem 1.25rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 0.6rem;
+  background: #2563eb;
+  color: #fff;
+}
+
+.manual-entry button:disabled {
+  opacity: 0.5;
+}
+
+/* Result */
+.status {
+  border-radius: 1rem;
+  padding: 1.5rem 1.25rem;
+  text-align: center;
+  color: #fff;
+}
+
+.status .product-name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.status .brand {
+  margin: 0.25rem 0 0;
+  opacity: 0.9;
+}
+
+.status .status-label {
+  font-size: 2.5rem;
+  font-weight: 900;
+  margin: 0.75rem 0 0.25rem;
+  letter-spacing: -0.01em;
+}
+
+.status .status-sub {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.status--ja {
+  background: var(--ja);
+}
+
+.status--spuren {
+  background: var(--spuren);
+  color: #1f2937;
+}
+
+.status--nein {
+  background: var(--nein);
+}
+
+.status--keine-daten {
+  background: var(--keine-daten);
+  border: 3px solid var(--ja);
+}
