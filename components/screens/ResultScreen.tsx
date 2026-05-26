@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import type { ProductResult } from "@/lib/types";
 import { statusToVerdict, VERDICT, verdictColor } from "@/lib/verdict";
+import { beep, vibrate } from "@/lib/feedback";
 import { AppShell, Chip, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
 
 function shortEan(ean: string): string {
@@ -12,29 +13,6 @@ function shortEan(ean: string): string {
 
 function nowHHMM(): string {
   return new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-}
-
-/** Short attention beep via WebAudio (only when the user opted into sound). */
-function beep() {
-  try {
-    const Ctx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.value = 880;
-    gain.gain.value = 0.05;
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.18);
-    osc.onended = () => ctx.close();
-  } catch {
-    /* audio unavailable */
-  }
 }
 
 function highlight(text: string, found: string | null | undefined, P: Palette): ReactNode {
@@ -90,9 +68,7 @@ export default function ResultScreen({
   // Alert the user on a hit (and on traces when strict mode is on).
   useEffect(() => {
     if (!alarm) return;
-    if (haptic && typeof navigator !== "undefined" && navigator.vibrate) {
-      navigator.vibrate([60, 40, 60]);
-    }
+    if (haptic) vibrate([60, 40, 60]);
     if (sound) beep();
   }, [alarm, haptic, sound]);
 

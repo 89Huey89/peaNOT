@@ -19,6 +19,15 @@ import BarcodeScanner from "@/components/BarcodeScanner";
 
 type DecodeCallback = (result: { getText: () => string } | undefined) => void;
 
+/** Default props; individual tests override what they exercise. */
+const baseProps = {
+  onDetected: () => {},
+  paused: false,
+  loading: false,
+  haptic: false,
+  sound: false,
+};
+
 function setMediaDevices(value: unknown) {
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
@@ -46,7 +55,7 @@ describe("BarcodeScanner", () => {
     stubMediaPlayback();
   });
 
-  it("requests any-orientation, high-resolution, autofocusing capture", async () => {
+  it("auto-starts with any-orientation, high-resolution, autofocusing capture", async () => {
     let captured: MediaStreamConstraints | undefined;
     decodeMock.mockImplementation(
       async (constraints: MediaStreamConstraints, _video: HTMLVideoElement, _cb: DecodeCallback) => {
@@ -55,8 +64,8 @@ describe("BarcodeScanner", () => {
       },
     );
 
-    render(<BarcodeScanner onDetected={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: "Kamera starten" }));
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
+    // No tap needed – the camera starts on mount.
     await waitFor(() => expect(decodeMock).toHaveBeenCalled());
 
     // TRY_HARDER lets ZXing decode rotated / vertically held barcodes.
@@ -70,7 +79,7 @@ describe("BarcodeScanner", () => {
     expect(video.advanced).toContainEqual({ focusMode: "continuous" });
   });
 
-  it("starts the camera and reports a detected barcode (debounced)", async () => {
+  it("reports a detected barcode (debounced)", async () => {
     let capturedCallback: DecodeCallback = () => {};
     decodeMock.mockImplementation(async (_constraints, _video, cb: DecodeCallback) => {
       capturedCallback = cb;
@@ -78,9 +87,7 @@ describe("BarcodeScanner", () => {
     });
 
     const onDetected = vi.fn();
-    render(<BarcodeScanner onDetected={onDetected} />);
-
-    await userEvent.click(screen.getByRole("button", { name: "Kamera starten" }));
+    render(<BarcodeScanner {...baseProps} onDetected={onDetected} />);
     await waitFor(() => expect(decodeMock).toHaveBeenCalled());
 
     capturedCallback({ getText: () => "4011200296908" });
@@ -90,22 +97,48 @@ describe("BarcodeScanner", () => {
     expect(onDetected).toHaveBeenCalledWith("4011200296908");
   });
 
-  it("shows a banner and freezes when a barcode is detected", async () => {
+  it("ignores detections while paused (result on screen)", async () => {
     let capturedCallback: DecodeCallback = () => {};
-    decodeMock.mockImplementation(async (_constraints, video: HTMLVideoElement, cb: DecodeCallback) => {
+    decodeMock.mockImplementation(async (_constraints, _video, cb: DecodeCallback) => {
       capturedCallback = cb;
       return { stop: vi.fn() };
     });
 
-    render(<BarcodeScanner onDetected={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: "Kamera starten" }));
+    const onDetected = vi.fn();
+    render(<BarcodeScanner {...baseProps} onDetected={onDetected} paused />);
     await waitFor(() => expect(decodeMock).toHaveBeenCalled());
 
     capturedCallback({ getText: () => "4011200296908" });
 
-    const banner = await screen.findByRole("status");
-    expect(banner).toHaveTextContent(/Barcode erkannt: 4011200296908/);
+    expect(onDetected).not.toHaveBeenCalled();
+  });
+
+  it("shows a banner and freezes when a barcode is detected", async () => {
+    let capturedCallback: DecodeCallback = () => {};
+    decodeMock.mockImplementation(async (_constraints, _video: HTMLVideoElement, cb: DecodeCallback) => {
+      capturedCallback = cb;
+      return { stop: vi.fn() };
+    });
+
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
+    await waitFor(() => expect(decodeMock).toHaveBeenCalled());
+    // Wait until the start flow settles into "scanning" (start button gone),
+    // otherwise the idle→scanning transition would clear the fresh banner.
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Kamera/ })).toBeNull());
+
+    capturedCallback({ getText: () => "4011200296908" });
+
+    const banner = await screen.findByText(/Barcode erkannt: 4011200296908/);
+    expect(banner).toBeInTheDocument();
     expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+  });
+
+  it("shows the lookup spinner while loading", async () => {
+    decodeMock.mockImplementation(async () => ({ stop: vi.fn() }));
+
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} loading paused />);
+
+    expect(await screen.findByText(/Prüfe Produkt/)).toBeInTheDocument();
   });
 
   it("offers a torch toggle when the camera supports it", async () => {
@@ -122,8 +155,7 @@ describe("BarcodeScanner", () => {
       return { stop: vi.fn() };
     });
 
-    render(<BarcodeScanner onDetected={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: "Kamera starten" }));
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
 
     const torchButton = await screen.findByRole("button", { name: "Licht an" });
     await userEvent.click(torchButton);
@@ -135,17 +167,17 @@ describe("BarcodeScanner", () => {
   it("shows a German message when camera access is denied", async () => {
     decodeMock.mockRejectedValue(new DOMException("denied", "NotAllowedError"));
 
-    render(<BarcodeScanner onDetected={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: "Kamera starten" }));
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/Kamerazugriff verweigert/);
+    // A retry affordance is offered after denial.
+    expect(await screen.findByRole("button", { name: "Erneut versuchen" })).toBeInTheDocument();
   });
 
   it("shows an unsupported message when the camera API is missing", async () => {
     setMediaDevices(undefined);
 
-    render(<BarcodeScanner onDetected={vi.fn()} />);
-    await userEvent.click(screen.getByRole("button", { name: "Kamera starten" }));
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/Kamera nicht verfügbar/);
     expect(decodeMock).not.toHaveBeenCalled();

@@ -18,6 +18,9 @@ const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
 export default function ScanScreen({
   P,
   loading,
+  paused,
+  haptic,
+  sound,
   history,
   onDetected,
   onOpen,
@@ -25,6 +28,9 @@ export default function ScanScreen({
 }: {
   P: Palette;
   loading: boolean;
+  paused: boolean;
+  haptic: boolean;
+  sound: boolean;
   history: HistoryEntry[];
   onDetected: (barcode: string) => void;
   onOpen: (entry: HistoryEntry) => void;
@@ -64,7 +70,13 @@ export default function ScanScreen({
           {loading ? "Suche Barcode…" : "Halte einen Code vor die Kamera."}
         </SectionTitle>
 
-        <BarcodeScanner onDetected={onDetected} />
+        <BarcodeScanner
+          onDetected={onDetected}
+          paused={paused}
+          loading={loading}
+          haptic={haptic}
+          sound={sound}
+        />
 
         <button
           type="button"
