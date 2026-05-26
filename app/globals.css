@@ -51,6 +51,16 @@ body {
   user-select: none;
 }
 
+/* Keyboard focus is otherwise invisible: give every interactive element a
+   visible ring, but only for keyboard focus (not after a pointer tap). */
+:focus-visible {
+  outline: 3px solid var(--accent, #d68a1a);
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* Visually hidden, but still announced by screen readers (live regions). */
 .sr-only {
   position: absolute;
@@ -90,6 +100,20 @@ body {
     transform: rotate(-8deg) scale(1);
     opacity: 1;
   }
+}
+
+@keyframes bootPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.boot-pulse {
+  animation: bootPulse 1.4s ease-in-out infinite;
 }
 
 @keyframes resultIn {
@@ -318,7 +342,8 @@ body {
      inline styles, so the !important is needed to override them). */
   .stamp-in,
   .result-in,
-  .pulse-red {
+  .pulse-red,
+  .boot-pulse {
     animation: none !important;
   }
 }

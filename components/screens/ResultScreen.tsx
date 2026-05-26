@@ -83,6 +83,15 @@ export default function ResultScreen({
     headlineRef.current?.focus();
   }, []);
 
+  // Escape closes the result overlay, mirroring the ✕ button.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack]);
+
   // Announce the verdict to assistive tech. Starting empty and filling in an
   // effect makes it a live-region *change*, so it is reliably spoken.
   useEffect(() => {

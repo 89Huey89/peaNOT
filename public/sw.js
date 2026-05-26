@@ -2,7 +2,19 @@
 // (those change every deploy). Instead it caches at runtime so the app shell,
 // fonts, product photos and previously-fetched lookups stay available offline.
 
-const CACHE = "peanot-runtime-v1";
+const CACHE = "peanot-runtime-v2";
+const MAX_ENTRIES = 150;
+
+// Cap the runtime cache so it can't grow without bound (product photos and
+// lookups accumulate over time). Cache keys are returned in insertion order,
+// so deleting from the front evicts the oldest entries first.
+async function putWithLimit(cache, request, response) {
+  await cache.put(request, response);
+  const keys = await cache.keys();
+  for (let i = 0; i < keys.length - MAX_ENTRIES; i++) {
+    await cache.delete(keys[i]);
+  }
+}
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -48,7 +60,7 @@ async function cacheFirst(request) {
     const res = await fetch(request);
     if (res && res.ok) {
       const cache = await caches.open(CACHE);
-      cache.put(request, res.clone());
+      await putWithLimit(cache, request, res.clone());
     }
     return res;
   } catch {
@@ -60,7 +72,7 @@ async function networkFirst(request) {
   const cache = await caches.open(CACHE);
   try {
     const res = await fetch(request);
-    if (res && res.ok) cache.put(request, res.clone());
+    if (res && res.ok) await putWithLimit(cache, request, res.clone());
     return res;
   } catch {
     const cached = await cache.match(request);

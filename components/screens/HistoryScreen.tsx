@@ -61,7 +61,9 @@ export default function HistoryScreen({
             <button
               type="button"
               className="tap"
-              onClick={onClear}
+              onClick={() => {
+                if (window.confirm("Gesamten Verlauf löschen?")) onClear();
+              }}
               style={{
                 background: "transparent",
                 border: 0,

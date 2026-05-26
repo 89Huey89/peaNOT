@@ -5,7 +5,7 @@ import { palette } from "@/lib/theme";
 import { useProductLookup } from "@/components/useProductLookup";
 import { usePrefs } from "@/components/usePrefs";
 import { useHistory, type HistoryEntry } from "@/components/useHistory";
-import type { Tab } from "@/components/ui";
+import { Logo, type Tab } from "@/components/ui";
 import OnboardingScreen from "@/components/screens/OnboardingScreen";
 import ScanScreen from "@/components/screens/ScanScreen";
 import ResultScreen from "@/components/screens/ResultScreen";
@@ -62,7 +62,17 @@ export default function Home() {
   const openEntry = useCallback((entry: HistoryEntry) => runLookup(entry.barcode), [runLookup]);
 
   if (!ready || route === null) {
-    return <div style={{ minHeight: "100dvh", background: P.BG }} />;
+    return (
+      <div
+        className="device"
+        style={{ background: P.BG, color: P.INK, display: "grid", placeItems: "center" }}
+        aria-busy="true"
+      >
+        <div className="boot-pulse">
+          <Logo P={P} size={44} />
+        </div>
+      </div>
+    );
   }
 
   let screen: React.ReactNode;
