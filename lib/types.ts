@@ -41,4 +41,12 @@ export interface ProductResult {
   brand: string | null;
   status: PeanutStatus;
   message?: string;
+  /** Freeform ingredient text, when available (used as on-screen evidence). */
+  ingredients?: string | null;
+  /** Literal peanut mention found in the ingredients, for highlighting. */
+  found?: string | null;
+  /** German allergen labels declared on the product. */
+  allergens?: string[];
+  /** German labels for allergens flagged as possible traces. */
+  traces?: string[];
 }

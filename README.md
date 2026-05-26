@@ -33,13 +33,32 @@ Kamerazugriff (`getUserMedia`) benötigt einen sicheren Kontext: `localhost` im
 Dev oder HTTPS in Produktion. Auf dem iPhone die manuelle Eingabe nutzen, falls
 die Kamera blockiert ist.
 
+## Design
+
+UI nach Design-Richtung **A · Bold Stamp** (warmes Cremepapier, Tinte,
+Senf-Akzent; Fraunces-Serif + Space Grotesk + JetBrains Mono). Flow:
+Onboarding → Scan → Ergebnis → Verlauf → Profil mit unterer Tab-Navigation.
+Das Ergebnis ist der ganze Screen (Stempel, Belegstelle mit markierter
+„Erdnüsse", Allergen-Chips).
+
+## Verlauf & Einstellungen (lokal, ohne Konto)
+
+Scan-Verlauf und Einstellungen (Akzentfarbe, Vibrieren/Ton bei Treffer,
+Spuren-Strikt) liegen ausschließlich im Browser des Geräts (`localStorage`,
+Keys `peanot.history.v1` / `peanot.prefs.v1`). Kein Account, kein Server-State –
+„Leeren" entfernt den Verlauf wieder.
+
 ## Architektur
 
 - `lib/allergens/` – reine, getestete Erdnuss-Erkennung (über `AllergenProfile`
-  auf weitere Allergene erweiterbar).
+  auf weitere Allergene erweiterbar) inkl. `labels` (Allergen-Tags → Labels) und
+  `evidence` (Erdnuss-Fundstelle im Zutatentext).
 - `lib/off/` – serverseitiger Open-Food-Facts-Client (setzt User-Agent) + defensive Normalisierung.
+- `lib/theme.ts`, `lib/verdict.ts`, `lib/time.ts` – Palette, Status→Verdict-Mapping, relative Zeiten.
 - `app/api/product/[barcode]/route.ts` – API-Route, komponiert Client + Erkennung.
-- `components/` – `BarcodeScanner` (@zxing/browser), `ManualEntry`, `ResultDisplay`.
+- `app/page.tsx` – Client-Router über die Screens.
+- `components/` – `BarcodeScanner` (@zxing/browser), `ManualEntry`, geteilte
+  UI-Atome (`ui.tsx`), `useHistory`/`usePrefs` (localStorage) und `screens/`.
 
 ## Deployment (Vercel Hobby)
 
