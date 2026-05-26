@@ -40,6 +40,22 @@ export type OffFetchOutcome =
   | { kind: "not-found" }
   | { kind: "error"; cause: "network" | "timeout" | "http" | "parse" };
 
+/** A single product name-search hit (lightweight; no peanut verdict yet). */
+export interface ProductSearchResult {
+  barcode: string;
+  productName: string | null;
+  brand: string | null;
+  imageUrl: string | null;
+}
+
+/**
+ * Result of a server-side OFF name search. Discriminated union mirroring
+ * OffFetchOutcome; the client never throws.
+ */
+export type OffSearchOutcome =
+  | { kind: "ok"; results: ProductSearchResult[] }
+  | { kind: "error"; cause: "network" | "timeout" | "http" | "parse" };
+
 /** Public response shape returned by /api/product/[barcode]. */
 export interface ProductResult {
   barcode: string;
