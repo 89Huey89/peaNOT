@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ACCENTS, type Accent, type Palette } from "@/lib/theme";
+import { ACCENTS, type Accent, type Palette, type ThemeMode } from "@/lib/theme";
 import type { Prefs } from "@/components/usePrefs";
 import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
 
@@ -194,6 +194,52 @@ export default function ProfileScreen({
                       padding: 0,
                     }}
                   />
+                );
+              })}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "10px 0 4px",
+              marginTop: 8,
+              borderTop: `1px solid ${P.INK}14`,
+              gap: 12,
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600, flexShrink: 0 }}>Darstellung</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {(
+                [
+                  ["light", "Hell"],
+                  ["dark", "Dunkel"],
+                  ["system", "System"],
+                ] as [ThemeMode, string][]
+              ).map(([key, label]) => {
+                const active = prefs.theme === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className="tap"
+                    aria-pressed={active}
+                    onClick={() => setPref("theme", key)}
+                    style={{
+                      padding: "7px 12px",
+                      borderRadius: 99,
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      fontFamily: "inherit",
+                      background: active ? P.INK : "transparent",
+                      color: active ? P.BG : P.INK,
+                      border: `1.5px solid ${active ? P.INK : `${P.INK}33`}`,
+                    }}
+                  >
+                    {label}
+                  </button>
                 );
               })}
             </div>

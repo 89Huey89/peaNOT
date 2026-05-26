@@ -20,10 +20,26 @@ export default function Home() {
   const { loading, result, lookup } = useProductLookup();
 
   const [route, setRoute] = useState<Route | null>(null);
+  const [systemDark, setSystemDark] = useState(false);
   const bootstrapped = useRef(false);
 
-  const P = palette(prefs.accent);
+  // Resolve the "system" theme option and keep it in sync with the OS setting.
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    setSystemDark(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  const mode = prefs.theme === "system" ? (systemDark ? "dark" : "light") : prefs.theme;
+  const P = palette(prefs.accent, mode);
   const ready = prefsReady && historyReady;
+
+  // Color the area around the app column (and behind safe-area insets).
+  useEffect(() => {
+    document.body.style.background = P.OUTER;
+  }, [P.OUTER]);
 
   // Decide the first screen once storage has loaded (avoids onboarding flash).
   useEffect(() => {
@@ -60,18 +76,6 @@ export default function Home() {
         }}
       />
     );
-  } else if (route === "result" && result) {
-    screen = (
-      <ResultScreen
-        P={P}
-        result={result}
-        tracesStrict={prefs.tracesStrict}
-        haptic={prefs.haptic}
-        sound={prefs.sound}
-        onBack={() => setRoute("scan")}
-        onScanAgain={() => setRoute("scan")}
-      />
-    );
   } else if (route === "verlauf") {
     screen = (
       <HistoryScreen
@@ -96,15 +100,35 @@ export default function Home() {
       />
     );
   } else {
+    // scan + result share a mounted ScanScreen so the camera stream stays alive;
+    // the result is layered on top instead of swapping screens.
     screen = (
-      <ScanScreen
-        P={P}
-        loading={loading}
-        history={history}
-        onDetected={runLookup}
-        onOpen={openEntry}
-        onTab={(t: Tab) => setRoute(t)}
-      />
+      <>
+        <ScanScreen
+          P={P}
+          loading={loading}
+          paused={loading || route === "result"}
+          haptic={prefs.haptic}
+          sound={prefs.sound}
+          history={history}
+          onDetected={runLookup}
+          onOpen={openEntry}
+          onTab={(t: Tab) => setRoute(t)}
+        />
+        {route === "result" && result ? (
+          <div style={{ position: "absolute", inset: 0, zIndex: 30 }}>
+            <ResultScreen
+              P={P}
+              result={result}
+              tracesStrict={prefs.tracesStrict}
+              haptic={prefs.haptic}
+              sound={prefs.sound}
+              onBack={() => setRoute("scan")}
+              onScanAgain={() => setRoute("scan")}
+            />
+          </div>
+        ) : null}
+      </>
     );
   }
 

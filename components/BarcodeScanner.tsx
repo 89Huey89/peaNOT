@@ -5,6 +5,7 @@ import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser"
 import { BarcodeFormat, DecodeHintType } from "@zxing/library";
 import { sanitizeBarcode } from "@/lib/barcode";
 import { shouldAcceptScan, type LastScan } from "@/lib/scan";
+import { tick, vibrate } from "@/lib/feedback";
 
 type ScannerState = "idle" | "starting" | "scanning" | "denied" | "unsupported";
 
@@ -40,22 +41,38 @@ const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
   } as unknown as MediaTrackConstraints,
 };
 
-/** How long the frozen frame + banner stay before scanning resumes. */
-const RESUME_DELAY_MS = 1800;
-
 interface BarcodeScannerProps {
   onDetected: (barcode: string) => void;
+  /** Freeze decoding while a result/lookup is on screen; resume when false. */
+  paused: boolean;
+  /** Show the lookup spinner over the frozen frame. */
+  loading: boolean;
+  /** Light confirmation feedback the moment a code is read. */
+  haptic: boolean;
+  sound: boolean;
 }
 
-export default function BarcodeScanner({ onDetected }: BarcodeScannerProps) {
+export default function BarcodeScanner({
+  onDetected,
+  paused,
+  loading,
+  haptic,
+  sound,
+}: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
   const trackRef = useRef<MediaStreamTrack | null>(null);
   const lastScanRef = useRef<LastScan | null>(null);
   const frozenRef = useRef(false);
-  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startedRef = useRef(false);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
   const onDetectedRef = useRef(onDetected);
   onDetectedRef.current = onDetected;
+  const hapticRef = useRef(haptic);
+  hapticRef.current = haptic;
+  const soundRef = useRef(sound);
+  soundRef.current = sound;
 
   const [state, setState] = useState<ScannerState>("idle");
   const [detectedCode, setDetectedCode] = useState<string | null>(null);
@@ -86,7 +103,7 @@ export default function BarcodeScanner({ onDetected }: BarcodeScannerProps) {
         CAMERA_CONSTRAINTS,
         videoRef.current!,
         (result) => {
-          if (frozenRef.current || !result) return;
+          if (pausedRef.current || frozenRef.current || !result) return;
           const code = sanitizeBarcode(result.getText());
           if (code === "") return;
           const now = Date.now();
@@ -94,7 +111,8 @@ export default function BarcodeScanner({ onDetected }: BarcodeScannerProps) {
           lastScanRef.current = { code, time: now };
 
           // Freeze the displayed frame (track stays live for instant resume)
-          // and notify the user, then auto-resume scanning after a short delay.
+          // and notify the user. Scanning resumes via the `paused` effect once
+          // the result is dismissed — the camera is never torn down in between.
           frozenRef.current = true;
           try {
             videoRef.current?.pause();
@@ -102,13 +120,9 @@ export default function BarcodeScanner({ onDetected }: BarcodeScannerProps) {
             /* ignore */
           }
           setDetectedCode(code);
+          if (hapticRef.current) vibrate(25);
+          if (soundRef.current) tick();
           onDetectedRef.current(code);
-
-          resumeTimerRef.current = setTimeout(() => {
-            frozenRef.current = false;
-            setDetectedCode(null);
-            playVideo();
-          }, RESUME_DELAY_MS);
         },
       );
       controlsRef.current = controls;
@@ -146,15 +160,36 @@ export default function BarcodeScanner({ onDetected }: BarcodeScannerProps) {
     }
   }, [torchOn]);
 
+  // Auto-start once on mount so the user never has to tap "Kamera starten"
+  // between scans. The button below remains a fallback (e.g. denied → retry).
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    void start();
+  }, [start]);
+
+  // Parent-controlled freeze/resume. While paused (lookup running or result on
+  // screen) the frame stays frozen; the moment it clears we resume instantly.
+  useEffect(() => {
+    if (state !== "scanning") return;
+    if (paused) {
+      try {
+        videoRef.current?.pause();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    frozenRef.current = false;
+    setDetectedCode(null);
+    playVideo();
+  }, [paused, state, playVideo]);
+
   useEffect(() => {
     return () => {
       controlsRef.current?.stop();
       controlsRef.current = null;
       trackRef.current = null;
-      if (resumeTimerRef.current !== null) {
-        clearTimeout(resumeTimerRef.current);
-        resumeTimerRef.current = null;
-      }
       frozenRef.current = false;
     };
   }, []);
@@ -177,16 +212,26 @@ export default function BarcodeScanner({ onDetected }: BarcodeScannerProps) {
             ✓ Barcode erkannt: {detectedCode}
           </div>
         ) : null}
+        {loading ? (
+          <div className="scanner__loading" role="status" aria-live="polite">
+            <span className="scanner__spinner" aria-hidden="true" />
+            <span>Prüfe Produkt…</span>
+          </div>
+        ) : null}
       </div>
 
-      {state === "idle" || state === "starting" ? (
+      {state === "idle" || state === "starting" || state === "denied" ? (
         <button
           type="button"
           className="scanner__start"
           onClick={start}
           disabled={state === "starting"}
         >
-          {state === "starting" ? "Kamera startet…" : "Kamera starten"}
+          {state === "starting"
+            ? "Kamera startet…"
+            : state === "denied"
+              ? "Erneut versuchen"
+              : "Kamera starten"}
         </button>
       ) : null}
       {state === "scanning" && torchSupported ? (

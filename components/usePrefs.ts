@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { Accent } from "@/lib/theme";
+import type { Accent, ThemeMode } from "@/lib/theme";
 
 const STORAGE_KEY = "peanot.prefs.v1";
 
 export interface Prefs {
   accent: Accent;
+  theme: ThemeMode;
   haptic: boolean;
   sound: boolean;
   tracesStrict: boolean;
@@ -15,6 +16,7 @@ export interface Prefs {
 
 export const DEFAULT_PREFS: Prefs = {
   accent: "mustard",
+  theme: "light",
   haptic: true,
   sound: false,
   tracesStrict: true,
