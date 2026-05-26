@@ -16,7 +16,7 @@ function networkErrorResult(barcode: string): ProductResult {
     brand: null,
     status: "KEINE_DATEN",
     message:
-      "Netzwerkfehler – Erdnuss kann nicht ausgeschlossen werden.",
+      "Netzwerkfehler – deine Allergene können nicht ausgeschlossen werden.",
   };
 }
 
@@ -24,11 +24,17 @@ export function useProductLookup() {
   const [state, setState] = useState<LookupState>({ loading: false, result: null });
   const requestIdRef = useRef(0);
 
-  const lookup = useCallback(async (barcode: string): Promise<ProductResult | null> => {
+  const lookup = useCallback(async (
+    barcode: string,
+    allergens: string[] = [],
+  ): Promise<ProductResult | null> => {
     const requestId = ++requestIdRef.current;
     setState((prev) => ({ ...prev, loading: true }));
     try {
-      const res = await fetch(`/api/product/${encodeURIComponent(barcode)}`);
+      const query = allergens.length
+        ? `?a=${encodeURIComponent(allergens.join(","))}`
+        : "";
+      const res = await fetch(`/api/product/${encodeURIComponent(barcode)}${query}`);
       const data = (await res.json()) as ProductResult;
       if (requestId !== requestIdRef.current) return null;
       setState({ loading: false, result: data });
