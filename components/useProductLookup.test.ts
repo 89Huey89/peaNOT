@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { useProductLookup } from "@/components/useProductLookup";
+import {
+  useProductLookup,
+  __clearProductLookupCache,
+} from "@/components/useProductLookup";
 import type { ProductResult } from "@/lib/types";
 
 function deferred<T>() {
@@ -17,6 +20,7 @@ function jsonResponse(body: ProductResult) {
 
 describe("useProductLookup", () => {
   beforeEach(() => {
+    __clearProductLookupCache();
     vi.stubGlobal("fetch", vi.fn());
   });
 
@@ -53,7 +57,10 @@ describe("useProductLookup", () => {
       await result.current.lookup("111", ["peanut", "milk"]);
     });
 
-    expect(fetch).toHaveBeenCalledWith("/api/product/111?a=peanut%2Cmilk");
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/product/111?a=peanut%2Cmilk",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("synthesizes a KEINE_DATEN result on network failure", async () => {

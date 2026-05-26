@@ -26,20 +26,27 @@ export function useProductSearch() {
   });
   const requestIdRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      // Invalidate any in-flight request once the component unmounts.
+      // Invalidate and abort any in-flight request once the component unmounts.
       requestIdRef.current++;
+      abortRef.current?.abort();
     };
   }, []);
 
   const run = useCallback(async (query: string) => {
     const requestId = ++requestIdRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setState((prev) => ({ ...prev, searching: true, query }));
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+        signal: controller.signal,
+      });
       const data = (await res.json()) as { results?: ProductSearchResult[] };
       if (requestId !== requestIdRef.current) return;
       setState({ searching: false, results: data.results ?? [], query });
@@ -57,6 +64,7 @@ export function useProductSearch() {
       if (query.length < MIN_QUERY_LENGTH) {
         // Cancel any pending/in-flight request and clear results immediately.
         requestIdRef.current++;
+        abortRef.current?.abort();
         setState({ searching: false, results: [], query });
         return;
       }

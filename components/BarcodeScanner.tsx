@@ -1,30 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
-import { BarcodeFormat, DecodeHintType } from "@zxing/library";
+import type { IScannerControls } from "@zxing/browser";
 import { sanitizeBarcode } from "@/lib/barcode";
 import { shouldAcceptScan, type LastScan } from "@/lib/scan";
 import { tick, vibrate } from "@/lib/feedback";
 
 type ScannerState = "idle" | "starting" | "scanning" | "denied" | "unsupported";
-
-const PRODUCT_FORMAT_HINTS = new Map<DecodeHintType, unknown>([
-  // Restrict ZXing to product barcode formats so each frame decodes faster.
-  [
-    DecodeHintType.POSSIBLE_FORMATS,
-    [
-      BarcodeFormat.EAN_13,
-      BarcodeFormat.EAN_8,
-      BarcodeFormat.UPC_A,
-      BarcodeFormat.UPC_E,
-      BarcodeFormat.ITF,
-      BarcodeFormat.CODE_128,
-    ],
-  ],
-  // Also scan rotated rows so a barcode held vertically / at an angle is read.
-  [DecodeHintType.TRY_HARDER, true],
-]);
 
 /**
  * Request a sharp, higher-resolution rear-camera stream. More pixels make
@@ -94,7 +76,29 @@ export default function BarcodeScanner({
     }
     setState("starting");
     try {
-      const reader = new BrowserMultiFormatReader(PRODUCT_FORMAT_HINTS, {
+      // Load the (heavy) ZXing libraries only now, on the user's deliberate tap,
+      // so they stay out of the initial scan-screen bundle.
+      const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] =
+        await Promise.all([import("@zxing/browser"), import("@zxing/library")]);
+
+      const hints = new Map<number, unknown>([
+        // Restrict ZXing to product barcode formats so each frame decodes faster.
+        [
+          DecodeHintType.POSSIBLE_FORMATS,
+          [
+            BarcodeFormat.EAN_13,
+            BarcodeFormat.EAN_8,
+            BarcodeFormat.UPC_A,
+            BarcodeFormat.UPC_E,
+            BarcodeFormat.ITF,
+            BarcodeFormat.CODE_128,
+          ],
+        ],
+        // Also scan rotated rows so a barcode held vertically / at an angle is read.
+        [DecodeHintType.TRY_HARDER, true],
+      ]);
+
+      const reader = new BrowserMultiFormatReader(hints, {
         delayBetweenScanAttempts: 100,
         delayBetweenScanSuccess: 200,
       });

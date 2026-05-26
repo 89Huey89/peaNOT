@@ -204,7 +204,7 @@ export function TabBar({
               transition: "background .18s ease",
             }}
           >
-            <span style={{ fontSize: 14, opacity: active ? 1 : 0.6 }}>{it.icon}</span>
+            <span aria-hidden="true" style={{ fontSize: 14, opacity: active ? 1 : 0.6 }}>{it.icon}</span>
             <span>{it.label}</span>
           </button>
         );
