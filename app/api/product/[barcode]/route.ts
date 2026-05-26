@@ -45,6 +45,7 @@ export async function GET(
         found: ingredients ? findPeanutMention(ingredients) : null,
         allergens: allergenLabels(outcome.fields.allergens_tags),
         traces: allergenLabels(outcome.fields.traces_tags),
+        imageUrl: outcome.imageUrl || null,
       };
       break;
     }
@@ -55,6 +56,7 @@ export async function GET(
         brand: outcome.brand || null,
         status: "KEINE_DATEN",
         message: KEINE_DATEN_MESSAGES["no-data"],
+        imageUrl: outcome.imageUrl || null,
       };
       break;
     case "not-found":

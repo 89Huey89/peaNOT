@@ -16,7 +16,7 @@ type Route = "onboarding" | "scan" | "verlauf" | "profil" | "result";
 
 export default function Home() {
   const { prefs, setPref, ready: prefsReady } = usePrefs();
-  const { history, record, clear, ready: historyReady } = useHistory();
+  const { history, record, clear, remove, ready: historyReady } = useHistory();
   const { loading, result, lookup } = useProductLookup();
 
   const [route, setRoute] = useState<Route | null>(null);
@@ -83,6 +83,7 @@ export default function Home() {
         history={history}
         onOpen={openEntry}
         onClear={clear}
+        onRemove={remove}
         onTab={(t: Tab) => setRoute(t)}
       />
     );
@@ -123,8 +124,10 @@ export default function Home() {
               tracesStrict={prefs.tracesStrict}
               haptic={prefs.haptic}
               sound={prefs.sound}
+              loading={loading}
               onBack={() => setRoute("scan")}
               onScanAgain={() => setRoute("scan")}
+              onRetry={() => runLookup(result.barcode)}
             />
           </div>
         ) : null}

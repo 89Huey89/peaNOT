@@ -17,6 +17,10 @@ export const OFF_FIELDS = [
   "ingredients_tags",
   "ingredients_text",
   "ingredients_text_de",
+  "image_front_small_url",
+  "image_front_url",
+  "image_small_url",
+  "image_url",
 ].join(",");
 
 export const OFF_TIMEOUT_MS = 6000;

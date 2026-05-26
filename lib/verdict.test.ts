@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { statusToVerdict, VERDICT, verdictColor } from "@/lib/verdict";
+import { statusToVerdict, VERDICT, verdictColor, verdictGlyph } from "@/lib/verdict";
 import { palette } from "@/lib/theme";
 
 describe("statusToVerdict", () => {
@@ -29,5 +29,18 @@ describe("VERDICT copy", () => {
     expect(VERDICT.danger.label).toBe("Erdnuss enthalten");
     expect(VERDICT.trace.label).toBe("Spuren möglich");
     expect(VERDICT.unknown.label).toBe("Unbekannt");
+  });
+});
+
+describe("verdictGlyph", () => {
+  it("returns a distinct, non-color cue per verdict", () => {
+    const glyphs = [
+      verdictGlyph("safe"),
+      verdictGlyph("danger"),
+      verdictGlyph("trace"),
+      verdictGlyph("unknown"),
+    ];
+    expect(new Set(glyphs).size).toBe(4);
+    glyphs.forEach((g) => expect(g).not.toBe(""));
   });
 });

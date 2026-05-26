@@ -79,6 +79,7 @@ export function Stamp({
   const { stampWord, stampSub } = VERDICT[verdict];
   return (
     <div
+      className={animate ? "stamp-in" : undefined}
       style={{
         width: 88,
         height: 88,
@@ -239,7 +240,7 @@ export function TopBar({ P, right = null }: { P: Palette; right?: ReactNode }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "8px 22px",
+        padding: "calc(8px + env(safe-area-inset-top)) 22px 8px",
       }}
     >
       <Logo P={P} />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import type { ProductResult } from "@/lib/types";
 import { statusToVerdict, VERDICT, verdictColor } from "@/lib/verdict";
@@ -44,16 +44,20 @@ export default function ResultScreen({
   tracesStrict,
   haptic,
   sound,
+  loading,
   onBack,
   onScanAgain,
+  onRetry,
 }: {
   P: Palette;
   result: ProductResult;
   tracesStrict: boolean;
   haptic: boolean;
   sound: boolean;
+  loading: boolean;
   onBack: () => void;
   onScanAgain: () => void;
+  onRetry: () => void;
 }) {
   const verdict = statusToVerdict(result.status);
   const copy = VERDICT[verdict];
@@ -64,6 +68,24 @@ export default function ResultScreen({
   const isTrace = verdict === "trace";
   const isUnknown = verdict === "unknown";
   const alarm = isDanger || (isTrace && tracesStrict);
+
+  const headlineRef = useRef<HTMLParagraphElement>(null);
+  const [announce, setAnnounce] = useState("");
+  const [imgFailed, setImgFailed] = useState(false);
+
+  // Move focus to the result so keyboard / screen-reader users land on it
+  // (and don't stay on the now-hidden scan screen behind it).
+  useEffect(() => {
+    headlineRef.current?.focus();
+  }, []);
+
+  // Announce the verdict to assistive tech. Starting empty and filling in an
+  // effect makes it a live-region *change*, so it is reliably spoken.
+  useEffect(() => {
+    const detail = isUnknown ? result.message ?? copy.detail : copy.detail;
+    setAnnounce(`${copy.title} ${detail}`);
+    setImgFailed(false);
+  }, [result, copy.title, copy.detail, isUnknown]);
 
   // Alert the user on a hit (and on traces when strict mode is on).
   useEffect(() => {
@@ -109,8 +131,12 @@ export default function ResultScreen({
         }
       />
 
+      <p className="sr-only" aria-live={alarm ? "assertive" : "polite"}>
+        {announce}
+      </p>
+
       <div
-        className="scroll"
+        className="scroll result-in"
         style={{
           flex: 1,
           overflowY: "auto",
@@ -124,6 +150,8 @@ export default function ResultScreen({
         </div>
 
         <p
+          ref={headlineRef}
+          tabIndex={-1}
           style={{
             fontFamily: "'Fraunces', serif",
             fontStyle: "italic",
@@ -131,6 +159,7 @@ export default function ResultScreen({
             margin: "6px 0 14px",
             color: P.INK,
             lineHeight: 1.2,
+            outline: "none",
           }}
         >
           {copy.headline}
@@ -147,20 +176,42 @@ export default function ResultScreen({
           }}
         >
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <div
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 10,
-                background: `repeating-linear-gradient(45deg, ${P.INK}10 0 6px, transparent 6px 12px), #ece1c8`,
-                border: `1px solid ${P.INK}22`,
-                display: "grid",
-                placeItems: "center",
-                flexShrink: 0,
-              }}
-            >
-              <Mono style={{ opacity: 0.55, fontSize: 8 }}>foto</Mono>
-            </div>
+            {result.imageUrl && !imgFailed ? (
+              <img
+                src={result.imageUrl}
+                alt={
+                  result.productName ? `Foto von ${result.productName}` : "Produktfoto"
+                }
+                width={56}
+                height={56}
+                loading="lazy"
+                onError={() => setImgFailed(true)}
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 10,
+                  objectFit: "cover",
+                  background: "#ece1c8",
+                  border: `1px solid ${P.INK}22`,
+                  flexShrink: 0,
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 10,
+                  background: `repeating-linear-gradient(45deg, ${P.INK}10 0 6px, transparent 6px 12px), #ece1c8`,
+                  border: `1px solid ${P.INK}22`,
+                  display: "grid",
+                  placeItems: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Mono style={{ opacity: 0.55, fontSize: 8 }}>foto</Mono>
+              </div>
+            )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <Mono style={{ opacity: 0.55 }}>
                 {result.brand ?? "—"} · ean {shortEan(result.barcode)}
@@ -297,6 +348,27 @@ export default function ResultScreen({
                 Zu diesem Barcode liegen keine Zutaten- oder Allergendaten vor. Erdnuss kann
                 nicht ausgeschlossen werden – im Zweifel das Produkt meiden.
               </div>
+              <button
+                type="button"
+                className="tap"
+                onClick={onRetry}
+                disabled={loading}
+                style={{
+                  marginTop: 12,
+                  width: "100%",
+                  background: "transparent",
+                  color: P.INK,
+                  border: `1.5px solid ${P.ACCENT}`,
+                  borderRadius: 99,
+                  padding: "10px 14px",
+                  fontWeight: 700,
+                  fontSize: 13.5,
+                  fontFamily: "inherit",
+                  opacity: loading ? 0.6 : 1,
+                }}
+              >
+                {loading ? "Prüfe erneut…" : "↻  Erneut prüfen"}
+              </button>
             </div>
           ) : null}
         </div>
@@ -321,7 +393,7 @@ export default function ResultScreen({
       >
         <button
           type="button"
-          className="tap btn"
+          className={alarm ? "tap btn pulse-red" : "tap btn"}
           onClick={onScanAgain}
           style={{
             width: "100%",

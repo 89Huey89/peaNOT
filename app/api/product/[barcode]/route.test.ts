@@ -41,6 +41,7 @@ describe("GET /api/product/[barcode]", () => {
       kind: "found",
       productName: "Peanut Bar",
       brand: "ACME",
+      imageUrl: "https://img/peanut-bar.jpg",
       fields: fields({ allergens_tags: ["en:peanuts"] }),
     });
 
@@ -50,6 +51,7 @@ describe("GET /api/product/[barcode]", () => {
     expect(body.status).toBe("JA");
     expect(body.productName).toBe("Peanut Bar");
     expect(body.brand).toBe("ACME");
+    expect(body.imageUrl).toBe("https://img/peanut-bar.jpg");
   });
 
   it("returns 200 SPUREN for a traces-only product", async () => {
@@ -57,6 +59,7 @@ describe("GET /api/product/[barcode]", () => {
       kind: "found",
       productName: "Cookie",
       brand: "ACME",
+      imageUrl: "",
       fields: fields({ traces_tags: ["en:peanuts"], ingredients_text: "Mehl" }),
     });
 
@@ -70,6 +73,7 @@ describe("GET /api/product/[barcode]", () => {
       kind: "found",
       productName: "Milk",
       brand: "ACME",
+      imageUrl: "",
       fields: fields({ allergens_tags: ["en:milk"], ingredients_text: "Milch" }),
     });
 
@@ -79,7 +83,7 @@ describe("GET /api/product/[barcode]", () => {
   });
 
   it("returns 200 KEINE_DATEN with name for no-data products", async () => {
-    mockOutcome({ kind: "no-data", productName: "Mystery", brand: "ACME" });
+    mockOutcome({ kind: "no-data", productName: "Mystery", brand: "ACME", imageUrl: "" });
 
     const { status, body } = await call("4011200296908");
     expect(status).toBe(200);

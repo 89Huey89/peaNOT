@@ -45,7 +45,10 @@ function Toggle({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <div
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
       className="tap"
       onClick={() => onChange(!checked)}
       style={{
@@ -54,13 +57,25 @@ function Toggle({
         gap: 14,
         padding: "8px 0",
         justifyContent: "space-between",
+        width: "100%",
+        background: "transparent",
+        border: 0,
+        fontFamily: "inherit",
+        color: "inherit",
+        textAlign: "left",
+        cursor: "pointer",
       }}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
-        {sub ? <div style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>{sub}</div> : null}
-      </div>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{label}</span>
+        {sub ? (
+          <span style={{ display: "block", fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+            {sub}
+          </span>
+        ) : null}
+      </span>
       <span
+        aria-hidden="true"
         style={{
           width: 42,
           height: 24,
@@ -85,7 +100,7 @@ function Toggle({
           }}
         />
       </span>
-    </div>
+    </button>
   );
 }
 

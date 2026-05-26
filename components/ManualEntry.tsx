@@ -24,6 +24,8 @@ export default function ManualEntry({ onSubmit, disabled }: ManualEntryProps) {
         <input
           id="manual-barcode"
           name="barcode"
+          // Focus on mount: the field only renders once the user opens it.
+          autoFocus
           inputMode="numeric"
           pattern="[0-9]*"
           autoComplete="off"

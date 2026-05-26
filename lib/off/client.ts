@@ -7,6 +7,7 @@ import {
 } from "@/lib/config";
 import {
   extractBrand,
+  extractImageUrl,
   extractProductName,
   hasUsableData,
   normalizeOffProduct,
@@ -46,12 +47,13 @@ export async function fetchOffProduct(barcode: string): Promise<OffFetchOutcome>
     const fields = normalizeOffProduct(body.product);
     const productName = extractProductName(body.product);
     const brand = extractBrand(body.product);
+    const imageUrl = extractImageUrl(body.product);
 
     if (!hasUsableData(fields)) {
-      return { kind: "no-data", productName, brand };
+      return { kind: "no-data", productName, brand, imageUrl };
     }
 
-    return { kind: "found", fields, productName, brand };
+    return { kind: "found", fields, productName, brand, imageUrl };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       return { kind: "error", cause: "timeout" };

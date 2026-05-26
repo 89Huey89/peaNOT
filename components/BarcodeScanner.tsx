@@ -64,7 +64,6 @@ export default function BarcodeScanner({
   const trackRef = useRef<MediaStreamTrack | null>(null);
   const lastScanRef = useRef<LastScan | null>(null);
   const frozenRef = useRef(false);
-  const startedRef = useRef(false);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
   const onDetectedRef = useRef(onDetected);
@@ -160,13 +159,10 @@ export default function BarcodeScanner({
     }
   }, [torchOn]);
 
-  // Auto-start once on mount so the user never has to tap "Kamera starten"
-  // between scans. The button below remains a fallback (e.g. denied → retry).
-  useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-    void start();
-  }, [start]);
+  // The camera is started deliberately by the user (tap "Kamera starten")
+  // rather than on mount, so it never grabs a frame before the user is ready
+  // to aim — which previously caused premature scans right after launch. Once
+  // started, the stream stays alive across scans via the freeze/resume effect.
 
   // Parent-controlled freeze/resume. While paused (lookup running or result on
   // screen) the frame stays frozen; the moment it clears we resume instantly.
