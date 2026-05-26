@@ -43,6 +43,19 @@ describe("useProductLookup", () => {
     expect(result.current.result).toEqual(product);
   });
 
+  it("passes the selected allergens as a query param", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ barcode: "111", productName: "Bar", brand: null, status: "NEIN" }),
+    );
+
+    const { result } = renderHook(() => useProductLookup());
+    await act(async () => {
+      await result.current.lookup("111", ["peanut", "milk"]);
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/product/111?a=peanut%2Cmilk");
+  });
+
   it("synthesizes a KEINE_DATEN result on network failure", async () => {
     vi.mocked(fetch).mockRejectedValue(new Error("offline"));
 

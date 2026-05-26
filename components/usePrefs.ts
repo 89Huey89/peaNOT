@@ -12,6 +12,8 @@ export interface Prefs {
   sound: boolean;
   tracesStrict: boolean;
   onboarded: boolean;
+  /** Allergen keys (see lib/allergens/profile.ts) checked on every scan. */
+  selectedAllergens: string[];
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -21,6 +23,7 @@ export const DEFAULT_PREFS: Prefs = {
   sound: false,
   tracesStrict: true,
   onboarded: false,
+  selectedAllergens: ["peanut"],
 };
 
 function load(): Prefs {

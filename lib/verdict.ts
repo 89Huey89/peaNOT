@@ -1,5 +1,6 @@
-import type { PeanutStatus } from "@/lib/types";
+import type { AllergenHit, PeanutStatus } from "@/lib/types";
 import type { Palette } from "@/lib/theme";
+import type { AllergenProfile } from "@/lib/allergens/profile";
 
 // The result UI speaks in four "verdicts"; the detection engine speaks in four
 // statuses. This is the single place that maps between them.
@@ -18,59 +19,140 @@ export function statusToVerdict(status: PeanutStatus): Verdict {
   }
 }
 
-interface VerdictCopy {
+// Visual + allergen-neutral copy. `label` is the short, allergen-neutral word
+// used in history/scan lists; the allergen-specific words (tag/title/detail and
+// an allergen-aware label) are produced by verdictCopy() from the selection.
+interface VerdictVisual {
   colorKey: "GREEN" | "RED" | "AMBER" | "DIM";
-  label: string; // short, for lists
-  tag: string; // mono kicker on the verdict bar
+  label: string; // short, neutral, for lists
   headline: string; // italic Fraunces sentence
-  title: string; // big Fraunces verdict
-  detail: string; // explanatory line
   stampWord: string;
   stampSub: string;
 }
 
-export const VERDICT: Record<Verdict, VerdictCopy> = {
+export const VERDICT: Record<Verdict, VerdictVisual> = {
   safe: {
     colorKey: "GREEN",
-    label: "Keine Erdnuss",
-    tag: "keine erdnuss",
+    label: "Sicher",
     headline: "Geprüft. Du kannst beruhigt sein.",
-    title: "Keine Erdnuss.",
-    detail: "Keine Hinweise in Zutaten oder Allergenliste.",
     stampWord: "safe",
-    stampSub: "peanut · free",
+    stampSub: "all · clear",
   },
   danger: {
     colorKey: "RED",
-    label: "Erdnuss enthalten",
-    tag: "enthält erdnuss",
+    label: "Treffer",
     headline: "Achtung. Bitte nicht essen.",
-    title: "Erdnuss enthalten.",
-    detail: "In der Zutatenliste explizit aufgeführt.",
     stampWord: "stop",
-    stampSub: "enthält · peanut",
+    stampSub: "stop · alert",
   },
   trace: {
     colorKey: "AMBER",
     label: "Spuren möglich",
-    tag: "spuren möglich",
     headline: "Vorsicht. Hier sind Spuren möglich.",
-    title: "Spuren möglich.",
-    detail: "Hersteller-Hinweis auf mögliche Spuren.",
     stampWord: "achtung",
-    stampSub: "traces · peanut",
+    stampSub: "spuren",
   },
   unknown: {
     colorKey: "DIM",
     label: "Unbekannt",
-    tag: "keine daten",
     headline: "Dieses Produkt kennen wir noch nicht.",
-    title: "Keine Daten.",
-    detail: "Wir haben kein Profil zu diesem Barcode.",
     stampWord: "unklar",
     stampSub: "no · data",
   },
 };
+
+export interface VerdictCopy extends VerdictVisual {
+  tag: string; // mono kicker on the verdict bar
+  title: string; // big Fraunces verdict
+  detail: string; // explanatory line
+}
+
+function joinLabels(hits: AllergenHit[], status: PeanutStatus): string {
+  return hits
+    .filter((h) => h.status === status)
+    .map((h) => h.label)
+    .join(", ");
+}
+
+/**
+ * Build the allergen-aware verdict copy. Single selection reads like the
+ * original peanut wording ("Keine Erdnuss."); multi selection summarizes across
+ * the chosen allergens, naming the offenders from the per-allergen hits.
+ */
+export function verdictCopy(
+  verdict: Verdict,
+  profiles: AllergenProfile[],
+  hits: AllergenHit[] = [],
+): VerdictCopy {
+  const visual = VERDICT[verdict];
+  const single = profiles.length === 1 ? profiles[0] : undefined;
+
+  let copy: { label: string; tag: string; title: string; detail: string };
+
+  if (single) {
+    const label = single.label;
+    const lower = label.toLowerCase();
+    copy = {
+      safe: {
+        label: `Keine ${label}`,
+        tag: `keine ${lower}`,
+        title: `Keine ${label}.`,
+        detail: "Keine Hinweise in Zutaten oder Allergenliste.",
+      },
+      danger: {
+        label: `${label} enthalten`,
+        tag: `enthält ${lower}`,
+        title: `${label} enthalten.`,
+        detail: "In der Zutatenliste explizit aufgeführt.",
+      },
+      trace: {
+        label: "Spuren möglich",
+        tag: "spuren möglich",
+        title: "Spuren möglich.",
+        detail: `Hersteller-Hinweis auf mögliche Spuren von ${label}.`,
+      },
+      unknown: {
+        label: "Unbekannt",
+        tag: "keine daten",
+        title: "Keine Daten.",
+        detail: `Wir können ${label} nicht ausschließen.`,
+      },
+    }[verdict];
+  } else {
+    const danger = joinLabels(hits, "JA");
+    const traces = joinLabels(hits, "SPUREN");
+    copy = {
+      safe: {
+        label: "Alles frei",
+        tag: "alles frei",
+        title: "Alles frei.",
+        detail: "Keine deiner Allergene gefunden.",
+      },
+      danger: {
+        label: "Treffer",
+        tag: "treffer",
+        title: "Treffer.",
+        detail: danger ? `Enthält: ${danger}.` : "Enthält eines deiner Allergene.",
+      },
+      trace: {
+        label: "Spuren möglich",
+        tag: "spuren möglich",
+        title: "Spuren möglich.",
+        detail: traces
+          ? `Mögliche Spuren: ${traces}.`
+          : "Hersteller-Hinweis auf mögliche Spuren.",
+      },
+      unknown: {
+        label: "Unbekannt",
+        tag: "keine daten",
+        title: "Keine Daten.",
+        detail: "Wir können deine Allergene nicht ausschließen.",
+      },
+    }[verdict];
+  }
+
+  return { ...visual, ...copy };
+}
 
 export function verdictColor(verdict: Verdict, P: Palette): string {
   return P[VERDICT[verdict].colorKey];

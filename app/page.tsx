@@ -50,13 +50,13 @@ export default function Home() {
 
   const runLookup = useCallback(
     async (barcode: string) => {
-      const r = await lookup(barcode);
+      const r = await lookup(barcode, prefs.selectedAllergens);
       if (r) {
         record(r);
         setRoute("result");
       }
     },
-    [lookup, record],
+    [lookup, record, prefs.selectedAllergens],
   );
 
   const openEntry = useCallback((entry: HistoryEntry) => runLookup(entry.barcode), [runLookup]);
@@ -121,6 +121,7 @@ export default function Home() {
             <ResultScreen
               P={P}
               result={result}
+              selectedAllergens={prefs.selectedAllergens}
               tracesStrict={prefs.tracesStrict}
               haptic={prefs.haptic}
               sound={prefs.sound}

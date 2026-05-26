@@ -126,6 +126,7 @@ describe("detectPeanut", () => {
 describe("detectAllergen extensibility", () => {
   const HAZELNUT: AllergenProfile = {
     key: "hazelnut",
+    label: "Haselnuss",
     positiveTags: ["en:hazelnut", "en:hazelnuts"],
     textKeywords: ["hazelnut", "haselnuss", "noisette"],
   };

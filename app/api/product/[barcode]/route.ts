@@ -2,24 +2,43 @@ import { NextResponse } from "next/server";
 import type { ProductResult } from "@/lib/types";
 import { isValidBarcode, sanitizeBarcode } from "@/lib/barcode";
 import { fetchOffProduct } from "@/lib/off/client";
-import { detectPeanut } from "@/lib/allergens/detect";
+import { detectAllergens } from "@/lib/allergens/combine";
+import { getProfiles, type AllergenProfile } from "@/lib/allergens/profile";
 import { allergenLabels } from "@/lib/allergens/labels";
-import { findPeanutMention } from "@/lib/allergens/evidence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const KEINE_DATEN_MESSAGES = {
-  "not-found":
-    "Produkt nicht in der Datenbank gefunden – Erdnuss kann nicht ausgeschlossen werden.",
-  "no-data":
-    "Keine Zutaten- oder Allergendaten vorhanden – Erdnuss kann nicht ausgeschlossen werden.",
-  error:
-    "Daten konnten nicht abgerufen werden – Erdnuss kann nicht ausgeschlossen werden.",
-} as const;
+type KeineDatenKind = "not-found" | "no-data" | "error";
+
+/** Read the requested allergen keys, whitelist them, default to peanut. */
+function parseProfiles(url: string): AllergenProfile[] {
+  const param = new URL(url).searchParams.get("a");
+  const keys = param
+    ? param.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const profiles = getProfiles(keys);
+  return profiles.length > 0 ? profiles : getProfiles(["peanut"]);
+}
+
+function keineDatenMessage(
+  kind: KeineDatenKind,
+  profiles: AllergenProfile[],
+): string {
+  const subject =
+    profiles.length === 1 && profiles[0]
+      ? `${profiles[0].label} kann nicht ausgeschlossen werden`
+      : "deine Allergene können nicht ausgeschlossen werden";
+  const lead: Record<KeineDatenKind, string> = {
+    "not-found": "Produkt nicht in der Datenbank gefunden",
+    "no-data": "Keine Zutaten- oder Allergendaten vorhanden",
+    error: "Daten konnten nicht abgerufen werden",
+  };
+  return `${lead[kind]} – ${subject}.`;
+}
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ barcode: string }> },
 ) {
   const { barcode: rawBarcode } = await context.params;
@@ -29,20 +48,23 @@ export async function GET(
     return NextResponse.json({ error: "invalid_barcode" }, { status: 400 });
   }
 
+  const profiles = parseProfiles(request.url);
   const outcome = await fetchOffProduct(barcode);
 
   let result: ProductResult;
   switch (outcome.kind) {
     case "found": {
-      const detection = detectPeanut(outcome.fields);
+      const detection = detectAllergens(outcome.fields, profiles);
       const ingredients = outcome.fields.ingredients_text || null;
+      const worst = detection.hits.find((h) => h.status === detection.overall);
       result = {
         barcode,
         productName: outcome.productName || null,
         brand: outcome.brand || null,
-        status: detection.status,
+        status: detection.overall,
         ingredients,
-        found: ingredients ? findPeanutMention(ingredients) : null,
+        found: worst?.found ?? null,
+        results: detection.hits,
         allergens: allergenLabels(outcome.fields.allergens_tags),
         traces: allergenLabels(outcome.fields.traces_tags),
         imageUrl: outcome.imageUrl || null,
@@ -55,7 +77,7 @@ export async function GET(
         productName: outcome.productName || null,
         brand: outcome.brand || null,
         status: "KEINE_DATEN",
-        message: KEINE_DATEN_MESSAGES["no-data"],
+        message: keineDatenMessage("no-data", profiles),
         imageUrl: outcome.imageUrl || null,
       };
       break;
@@ -65,7 +87,7 @@ export async function GET(
         productName: null,
         brand: null,
         status: "KEINE_DATEN",
-        message: KEINE_DATEN_MESSAGES["not-found"],
+        message: keineDatenMessage("not-found", profiles),
       };
       break;
     case "error":
@@ -74,7 +96,7 @@ export async function GET(
         productName: null,
         brand: null,
         status: "KEINE_DATEN",
-        message: KEINE_DATEN_MESSAGES.error,
+        message: keineDatenMessage("error", profiles),
       };
       break;
   }

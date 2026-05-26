@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ACCENTS, type Accent, type Palette, type ThemeMode } from "@/lib/theme";
+import { ALLERGEN_LIST } from "@/lib/allergens/profile";
 import type { Prefs } from "@/components/usePrefs";
 import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
 
@@ -103,17 +104,6 @@ function Toggle({
     </button>
   );
 }
-
-const ALLERGENS: [string, "primary" | "off"][] = [
-  ["Erdnuss", "primary"],
-  ["Haselnuss", "off"],
-  ["Cashew", "off"],
-  ["Mandel", "off"],
-  ["Soja", "off"],
-  ["Gluten", "off"],
-  ["Milch", "off"],
-  ["Sesam", "off"],
-];
 
 export default function ProfileScreen({
   P,
@@ -262,32 +252,35 @@ export default function ProfileScreen({
         </Section>
 
         <Section P={P} title="Meine Allergene">
-          <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.7, lineHeight: 1.4 }}>
-            Wir prüfen jedes Produkt auf Erdnuss und schlagen Alarm. Weitere Allergene folgen.
+          <p style={{ margin: "0 0 6px", fontSize: 13, opacity: 0.7, lineHeight: 1.4 }}>
+            Wähle aus, worauf wir jedes Produkt prüfen sollen. Bei einem Treffer schlagen wir Alarm.
           </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {ALLERGENS.map(([n, state]) => (
-              <span
-                key={n}
-                style={{
-                  fontSize: 12.5,
-                  padding: "6px 10px",
-                  borderRadius: 99,
-                  fontWeight: 600,
-                  ...(state === "primary"
-                    ? { background: P.RED, color: "#fff", border: `1px solid ${P.RED}` }
-                    : {
-                        background: "transparent",
-                        color: `${P.INK}77`,
-                        border: `1px solid ${P.INK}22`,
-                      }),
-                }}
+          {ALLERGEN_LIST.map((profile, i) => {
+            const checked = prefs.selectedAllergens.includes(profile.key);
+            return (
+              <div
+                key={profile.key}
+                style={i > 0 ? { borderTop: `1px solid ${P.INK}14` } : undefined}
               >
-                {state === "primary" ? "★ " : ""}
-                {n}
-              </span>
-            ))}
-          </div>
+                <Toggle
+                  P={P}
+                  label={profile.label}
+                  checked={checked}
+                  onChange={(v) => {
+                    const next = v
+                      ? [...prefs.selectedAllergens, profile.key]
+                      : prefs.selectedAllergens.filter((k) => k !== profile.key);
+                    setPref("selectedAllergens", next);
+                  }}
+                />
+              </div>
+            );
+          })}
+          {prefs.selectedAllergens.length === 0 ? (
+            <p style={{ margin: "8px 0 0", fontSize: 12, opacity: 0.6, lineHeight: 1.4 }}>
+              Nichts ausgewählt – ersatzweise prüfen wir auf Erdnuss.
+            </p>
+          ) : null}
         </Section>
 
         <Section P={P} title="Wie warnen wir dich?">

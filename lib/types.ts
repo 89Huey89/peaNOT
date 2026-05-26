@@ -1,5 +1,17 @@
 export type PeanutStatus = "JA" | "SPUREN" | "NEIN" | "KEINE_DATEN";
 
+/** Sprechender Alias für neuen Code; PeanutStatus bleibt aus Kompatibilität. */
+export type AllergenStatus = PeanutStatus;
+
+/** Detection outcome for a single allergen within a multi-allergen check. */
+export interface AllergenHit {
+  key: string;
+  label: string;
+  status: AllergenStatus;
+  /** Literal mention in the ingredients, for highlighting (JA/SPUREN only). */
+  found?: string | null;
+}
+
 /**
  * Normalized subset of Open Food Facts product fields the detector reads.
  * Arrays are always defined (possibly empty); texts are always strings.
@@ -45,14 +57,17 @@ export interface ProductResult {
   barcode: string;
   productName: string | null;
   brand: string | null;
+  /** Overall verdict across all checked allergens (worst case wins). */
   status: PeanutStatus;
   message?: string;
   /** Product photo URL from Open Food Facts, when available. */
   imageUrl?: string | null;
   /** Freeform ingredient text, when available (used as on-screen evidence). */
   ingredients?: string | null;
-  /** Literal peanut mention found in the ingredients, for highlighting. */
+  /** Literal allergen mention found in the ingredients, for highlighting. */
   found?: string | null;
+  /** Per-allergen breakdown for the checked allergens. */
+  results?: AllergenHit[];
   /** German allergen labels declared on the product. */
   allergens?: string[];
   /** German labels for allergens flagged as possible traces. */

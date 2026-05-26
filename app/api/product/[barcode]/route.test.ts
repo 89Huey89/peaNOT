@@ -16,8 +16,12 @@ function fields(partial: Partial<OffProductFields> = {}): OffProductFields {
   };
 }
 
-async function call(barcode: string): Promise<{ status: number; body: ProductResult & { error?: string } }> {
-  const res = await GET(new Request(`http://localhost/api/product/${barcode}`), {
+async function call(
+  barcode: string,
+  allergens?: string[],
+): Promise<{ status: number; body: ProductResult & { error?: string } }> {
+  const query = allergens ? `?a=${allergens.join(",")}` : "";
+  const res = await GET(new Request(`http://localhost/api/product/${barcode}${query}`), {
     params: Promise.resolve({ barcode }),
   });
   return { status: res.status, body: await res.json() };
@@ -115,5 +119,60 @@ describe("GET /api/product/[barcode]", () => {
     expect(status).toBe(400);
     expect(body.error).toBe("invalid_barcode");
     expect(fetchOffProduct).not.toHaveBeenCalled();
+  });
+
+  it("checks the requested allergens and reports per-allergen results", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "Choco",
+      brand: "ACME",
+      imageUrl: "",
+      fields: fields({
+        allergens_tags: ["en:milk"],
+        ingredients_text: "Zucker, Milch, Sojalecithin",
+      }),
+    });
+
+    const { body } = await call("4011200296908", ["peanut", "milk", "soy"]);
+
+    expect(body.status).toBe("JA"); // worst case across the selection
+    expect(body.results?.map((r) => r.key)).toEqual(["peanut", "milk", "soy"]);
+    expect(body.results?.find((r) => r.key === "milk")?.status).toBe("JA");
+    expect(body.results?.find((r) => r.key === "peanut")?.status).toBe("NEIN");
+  });
+
+  it("defaults to peanut when no allergens are requested", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "Peanut Bar",
+      brand: "ACME",
+      imageUrl: "",
+      fields: fields({ allergens_tags: ["en:peanuts"] }),
+    });
+
+    const { body } = await call("4011200296908");
+    expect(body.status).toBe("JA");
+    expect(body.results?.map((r) => r.key)).toEqual(["peanut"]);
+  });
+
+  it("ignores unknown allergen keys and falls back to peanut when all are unknown", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "Milk",
+      brand: "ACME",
+      imageUrl: "",
+      fields: fields({ allergens_tags: ["en:milk"], ingredients_text: "Milch" }),
+    });
+
+    const { body } = await call("4011200296908", ["bogus"]);
+    expect(body.results?.map((r) => r.key)).toEqual(["peanut"]);
+    expect(body.status).toBe("NEIN");
+  });
+
+  it("names the single selected allergen in the KEINE_DATEN message", async () => {
+    mockOutcome({ kind: "no-data", productName: "Mystery", brand: "ACME", imageUrl: "" });
+
+    const { body } = await call("4011200296908", ["milk"]);
+    expect(body.message).toContain("Milch");
   });
 });

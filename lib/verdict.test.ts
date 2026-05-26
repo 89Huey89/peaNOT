@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { statusToVerdict, VERDICT, verdictColor, verdictGlyph } from "@/lib/verdict";
+import {
+  statusToVerdict,
+  VERDICT,
+  verdictColor,
+  verdictCopy,
+  verdictGlyph,
+} from "@/lib/verdict";
 import { palette } from "@/lib/theme";
+import { getProfiles } from "@/lib/allergens/profile";
+import type { AllergenHit } from "@/lib/types";
 
 describe("statusToVerdict", () => {
   it.each([
@@ -23,12 +31,52 @@ describe("verdictColor", () => {
   });
 });
 
-describe("VERDICT copy", () => {
-  it("has German labels for every verdict", () => {
-    expect(VERDICT.safe.label).toBe("Keine Erdnuss");
-    expect(VERDICT.danger.label).toBe("Erdnuss enthalten");
-    expect(VERDICT.trace.label).toBe("Spuren möglich");
-    expect(VERDICT.unknown.label).toBe("Unbekannt");
+describe("verdictCopy single selection", () => {
+  const peanut = getProfiles(["peanut"]);
+
+  it("reads like the original peanut wording", () => {
+    expect(verdictCopy("safe", peanut).label).toBe("Keine Erdnuss");
+    expect(verdictCopy("danger", peanut).title).toBe("Erdnuss enthalten.");
+    expect(verdictCopy("trace", peanut).title).toBe("Spuren möglich.");
+  });
+
+  it("uses the chosen allergen's name", () => {
+    const milk = getProfiles(["milk"]);
+    expect(verdictCopy("danger", milk).title).toBe("Milch enthalten.");
+    expect(verdictCopy("unknown", milk).detail).toContain("Milch");
+  });
+
+  it("carries visual fields through from VERDICT", () => {
+    expect(verdictCopy("safe", peanut).headline).toBe(VERDICT.safe.headline);
+    expect(verdictCopy("danger", peanut).stampWord).toBe(VERDICT.danger.stampWord);
+  });
+});
+
+describe("verdictCopy multi selection", () => {
+  const profiles = getProfiles(["peanut", "milk", "soy"]);
+
+  it("names the offending allergens on a hit", () => {
+    const hits: AllergenHit[] = [
+      { key: "peanut", label: "Erdnuss", status: "NEIN" },
+      { key: "milk", label: "Milch", status: "JA" },
+      { key: "soy", label: "Soja", status: "JA" },
+    ];
+    const detail = verdictCopy("danger", profiles, hits).detail;
+    expect(detail).toContain("Milch");
+    expect(detail).toContain("Soja");
+    expect(detail).not.toContain("Erdnuss");
+  });
+
+  it("lists possible traces", () => {
+    const hits: AllergenHit[] = [
+      { key: "peanut", label: "Erdnuss", status: "SPUREN" },
+      { key: "milk", label: "Milch", status: "NEIN" },
+    ];
+    expect(verdictCopy("trace", profiles, hits).detail).toContain("Erdnuss");
+  });
+
+  it("uses a generic all-clear title", () => {
+    expect(verdictCopy("safe", profiles).title).toBe("Alles frei.");
   });
 });
 

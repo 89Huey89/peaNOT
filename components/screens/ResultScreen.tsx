@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import type { ProductResult } from "@/lib/types";
-import { statusToVerdict, VERDICT, verdictColor } from "@/lib/verdict";
+import { statusToVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/verdict";
+import { getProfiles } from "@/lib/allergens/profile";
 import { beep, vibrate } from "@/lib/feedback";
 import { AppShell, Chip, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
 
@@ -41,6 +42,7 @@ function highlight(text: string, found: string | null | undefined, P: Palette): 
 export default function ResultScreen({
   P,
   result,
+  selectedAllergens,
   tracesStrict,
   haptic,
   sound,
@@ -51,6 +53,7 @@ export default function ResultScreen({
 }: {
   P: Palette;
   result: ProductResult;
+  selectedAllergens: string[];
   tracesStrict: boolean;
   haptic: boolean;
   sound: boolean;
@@ -60,7 +63,8 @@ export default function ResultScreen({
   onRetry: () => void;
 }) {
   const verdict = statusToVerdict(result.status);
-  const copy = VERDICT[verdict];
+  const profiles = getProfiles(selectedAllergens);
+  const copy = verdictCopy(verdict, profiles, result.results ?? []);
   const fg = verdictColor(verdict, P);
 
   const isSafe = verdict === "safe";
@@ -292,6 +296,57 @@ export default function ResultScreen({
             </div>
           </div>
 
+          {(result.results?.length ?? 0) > 1 ? (
+            <div style={{ marginTop: 12 }}>
+              <Mono style={{ opacity: 0.6 }}>geprüfte allergene</Mono>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                  marginTop: 6,
+                }}
+              >
+                {result.results!.map((hit) => {
+                  const hv = statusToVerdict(hit.status);
+                  const tone: ChipTone =
+                    hit.status === "JA"
+                      ? "bad"
+                      : hit.status === "SPUREN"
+                        ? "warn"
+                        : hit.status === "NEIN"
+                          ? "ok"
+                          : "neutral";
+                  const word =
+                    hit.status === "JA"
+                      ? "enthalten"
+                      : hit.status === "SPUREN"
+                        ? "Spuren"
+                        : hit.status === "NEIN"
+                          ? "frei"
+                          : "keine Daten";
+                  return (
+                    <div
+                      key={hit.key}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                      }}
+                    >
+                      <span style={{ fontSize: 13.5, fontWeight: 600 }}>{hit.label}</span>
+                      <Chip tone={tone} P={P}>
+                        <span aria-hidden="true">{verdictGlyph(hv)}</span>
+                        <span>{word}</span>
+                      </Chip>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           {!isUnknown && result.ingredients ? (
             <div
               style={{
@@ -314,9 +369,8 @@ export default function ResultScreen({
               <Mono style={{ opacity: 0.6 }}>weitere allergene</Mono>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
                 {(result.allergens ?? []).map((name) => {
-                  const tone: ChipTone = name === "Erdnuss" ? "bad" : "info";
                   return (
-                    <Chip key={`a-${name}`} tone={tone} P={P}>
+                    <Chip key={`a-${name}`} tone="info" P={P}>
                       <span style={{ fontWeight: 700 }}>{name}</span>
                     </Chip>
                   );
@@ -345,7 +399,10 @@ export default function ResultScreen({
                 Kein Eintrag gefunden
               </div>
               <div style={{ fontSize: 12.5, lineHeight: 1.45, opacity: 0.85 }}>
-                Zu diesem Barcode liegen keine Zutaten- oder Allergendaten vor. Erdnuss kann
+                Zu diesem Barcode liegen keine Zutaten- oder Allergendaten vor.{" "}
+                {profiles.length === 1 && profiles[0]
+                  ? `${profiles[0].label} kann`
+                  : "Deine Allergene können"}{" "}
                 nicht ausgeschlossen werden – im Zweifel das Produkt meiden.
               </div>
               <button
