@@ -8,6 +8,7 @@ import { VERDICT } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
 import ManualEntry from "@/components/ManualEntry";
+import ProductSearch from "@/components/ProductSearch";
 import { verdictGlyph } from "@/lib/verdict";
 import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
 
@@ -38,6 +39,7 @@ export default function ScanScreen({
   onTab: (t: Tab) => void;
 }) {
   const [manualOpen, setManualOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   return (
     <AppShell P={P}>
@@ -114,6 +116,32 @@ export default function ScanScreen({
         {manualOpen ? (
           <div style={{ marginTop: 12 }}>
             <ManualEntry onSubmit={onDetected} disabled={loading} />
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          className="tap"
+          onClick={() => setSearchOpen((o) => !o)}
+          style={{
+            width: "100%",
+            marginTop: 10,
+            background: "transparent",
+            color: P.INK,
+            border: `1.5px solid ${P.INK}33`,
+            borderRadius: 99,
+            padding: "11px 14px",
+            fontWeight: 600,
+            fontSize: 13.5,
+            fontFamily: "inherit",
+          }}
+        >
+          🔎 &nbsp;Nach Name suchen
+        </button>
+
+        {searchOpen ? (
+          <div style={{ marginTop: 12 }}>
+            <ProductSearch P={P} onSelect={onDetected} disabled={loading} />
           </div>
         ) : null}
 

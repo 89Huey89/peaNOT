@@ -24,3 +24,20 @@ export const OFF_FIELDS = [
 ].join(",");
 
 export const OFF_TIMEOUT_MS = 6000;
+
+/** Search-a-licious full-text search endpoint (product name search). */
+export const OFF_SEARCH_URL = "https://search.openfoodfacts.org/search";
+
+/** Fields requested per search hit — only what the result list shows. */
+export const OFF_SEARCH_FIELDS = [
+  "code",
+  "product_name",
+  "product_name_de",
+  "brands",
+  "image_front_small_url",
+  "image_small_url",
+].join(",");
+
+export const OFF_SEARCH_PAGE_SIZE = 20;
+
+export const OFF_SEARCH_TIMEOUT_MS = 6000;
