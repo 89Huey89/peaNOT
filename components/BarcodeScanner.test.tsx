@@ -2,14 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { decodeMock } = vi.hoisted(() => ({ decodeMock: vi.fn() }));
+const { decodeMock, readerCtor } = vi.hoisted(() => {
+  const decodeMock = vi.fn();
+  const readerCtor = vi
+    .fn()
+    .mockImplementation(() => ({ decodeFromConstraints: decodeMock }));
+  return { decodeMock, readerCtor };
+});
 
 vi.mock("@zxing/browser", () => ({
-  BrowserMultiFormatReader: vi.fn().mockImplementation(() => ({
-    decodeFromConstraints: decodeMock,
-  })),
+  BrowserMultiFormatReader: readerCtor,
 }));
 
+import { DecodeHintType } from "@zxing/library";
 import BarcodeScanner from "@/components/BarcodeScanner";
 
 type DecodeCallback = (result: { getText: () => string } | undefined) => void;
@@ -36,8 +41,33 @@ function stubMediaPlayback() {
 describe("BarcodeScanner", () => {
   beforeEach(() => {
     decodeMock.mockReset();
+    readerCtor.mockClear();
     setMediaDevices({ getUserMedia: vi.fn() });
     stubMediaPlayback();
+  });
+
+  it("requests any-orientation, high-resolution, autofocusing capture", async () => {
+    let captured: MediaStreamConstraints | undefined;
+    decodeMock.mockImplementation(
+      async (constraints: MediaStreamConstraints, _video: HTMLVideoElement, _cb: DecodeCallback) => {
+        captured = constraints;
+        return { stop: vi.fn() };
+      },
+    );
+
+    render(<BarcodeScanner onDetected={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Kamera starten" }));
+    await waitFor(() => expect(decodeMock).toHaveBeenCalled());
+
+    // TRY_HARDER lets ZXing decode rotated / vertically held barcodes.
+    const hints = readerCtor.mock.calls[0]![0] as Map<number, unknown>;
+    expect(hints.get(DecodeHintType.TRY_HARDER)).toBe(true);
+
+    // Higher resolution + continuous focus extend the readable distance.
+    const video = captured!.video as Record<string, unknown>;
+    expect(video.width).toEqual({ ideal: 1280 });
+    expect(video.height).toEqual({ ideal: 720 });
+    expect(video.advanced).toContainEqual({ focusMode: "continuous" });
   });
 
   it("starts the camera and reports a detected barcode (debounced)", async () => {

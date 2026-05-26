@@ -8,8 +8,8 @@ import { shouldAcceptScan, type LastScan } from "@/lib/scan";
 
 type ScannerState = "idle" | "starting" | "scanning" | "denied" | "unsupported";
 
-/** Restrict ZXing to product barcode formats so each frame decodes faster. */
 const PRODUCT_FORMAT_HINTS = new Map<DecodeHintType, unknown>([
+  // Restrict ZXing to product barcode formats so each frame decodes faster.
   [
     DecodeHintType.POSSIBLE_FORMATS,
     [
@@ -21,7 +21,24 @@ const PRODUCT_FORMAT_HINTS = new Map<DecodeHintType, unknown>([
       BarcodeFormat.CODE_128,
     ],
   ],
+  // Also scan rotated rows so a barcode held vertically / at an angle is read.
+  [DecodeHintType.TRY_HARDER, true],
 ]);
+
+/**
+ * Request a sharp, higher-resolution rear-camera stream. More pixels make
+ * small / distant barcodes readable; continuous autofocus keeps them sharp as
+ * the user moves. `advanced` constraints are best-effort, so devices that lack
+ * focus control simply ignore them instead of failing.
+ */
+const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
+  video: {
+    facingMode: { ideal: "environment" },
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    advanced: [{ focusMode: "continuous" }],
+  } as unknown as MediaTrackConstraints,
+};
 
 /** How long the frozen frame + banner stay before scanning resumes. */
 const RESUME_DELAY_MS = 1800;
@@ -66,7 +83,7 @@ export default function BarcodeScanner({ onDetected }: BarcodeScannerProps) {
         delayBetweenScanSuccess: 200,
       });
       const controls = await reader.decodeFromConstraints(
-        { video: { facingMode: { ideal: "environment" } } },
+        CAMERA_CONSTRAINTS,
         videoRef.current!,
         (result) => {
           if (frozenRef.current || !result) return;
