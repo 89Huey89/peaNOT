@@ -24,17 +24,20 @@ export function useProductLookup() {
   const [state, setState] = useState<LookupState>({ loading: false, result: null });
   const requestIdRef = useRef(0);
 
-  const lookup = useCallback(async (barcode: string) => {
+  const lookup = useCallback(async (barcode: string): Promise<ProductResult | null> => {
     const requestId = ++requestIdRef.current;
     setState((prev) => ({ ...prev, loading: true }));
     try {
       const res = await fetch(`/api/product/${encodeURIComponent(barcode)}`);
       const data = (await res.json()) as ProductResult;
-      if (requestId !== requestIdRef.current) return;
+      if (requestId !== requestIdRef.current) return null;
       setState({ loading: false, result: data });
+      return data;
     } catch {
-      if (requestId !== requestIdRef.current) return;
-      setState({ loading: false, result: networkErrorResult(barcode) });
+      if (requestId !== requestIdRef.current) return null;
+      const fallback = networkErrorResult(barcode);
+      setState({ loading: false, result: fallback });
+      return fallback;
     }
   }, []);
 

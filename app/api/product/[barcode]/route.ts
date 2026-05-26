@@ -3,6 +3,8 @@ import type { ProductResult } from "@/lib/types";
 import { isValidBarcode, sanitizeBarcode } from "@/lib/barcode";
 import { fetchOffProduct } from "@/lib/off/client";
 import { detectPeanut } from "@/lib/allergens/detect";
+import { allergenLabels } from "@/lib/allergens/labels";
+import { findPeanutMention } from "@/lib/allergens/evidence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,11 +35,16 @@ export async function GET(
   switch (outcome.kind) {
     case "found": {
       const detection = detectPeanut(outcome.fields);
+      const ingredients = outcome.fields.ingredients_text || null;
       result = {
         barcode,
         productName: outcome.productName || null,
         brand: outcome.brand || null,
         status: detection.status,
+        ingredients,
+        found: ingredients ? findPeanutMention(ingredients) : null,
+        allergens: allergenLabels(outcome.fields.allergens_tags),
+        traces: allergenLabels(outcome.fields.traces_tags),
       };
       break;
     }
