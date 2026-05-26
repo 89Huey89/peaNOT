@@ -2,6 +2,7 @@ import type { OffFetchOutcome } from "@/lib/types";
 import {
   OFF_BASE_URL,
   OFF_FIELDS,
+  OFF_REVALIDATE_S,
   OFF_TIMEOUT_MS,
   USER_AGENT,
 } from "@/lib/config";
@@ -26,7 +27,7 @@ export async function fetchOffProduct(barcode: string): Promise<OffFetchOutcome>
     const res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
       signal: controller.signal,
-      cache: "no-store",
+      next: { revalidate: OFF_REVALIDATE_S },
     });
 
     if (!res.ok) {

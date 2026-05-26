@@ -78,9 +78,16 @@ export default function ResultScreen({
   const [imgFailed, setImgFailed] = useState(false);
 
   // Move focus to the result so keyboard / screen-reader users land on it
-  // (and don't stay on the now-hidden scan screen behind it).
+  // (and don't stay on the now-hidden scan screen behind it). On close, return
+  // focus to whatever opened the result, if that element is still in the DOM.
   useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
     headlineRef.current?.focus();
+    return () => {
+      if (opener?.isConnected && typeof opener.focus === "function") {
+        opener.focus();
+      }
+    };
   }, []);
 
   // Escape closes the result overlay, mirroring the ✕ button.

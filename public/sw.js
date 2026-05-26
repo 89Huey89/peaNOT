@@ -16,8 +16,12 @@ async function putWithLimit(cache, request, response) {
   }
 }
 
-self.addEventListener("install", () => {
-  self.skipWaiting();
+// No unconditional skipWaiting: the first install (no existing controller)
+// activates on its own, while an update stays "waiting" until the page asks to
+// take it over via the SKIP_WAITING message below. That lets the UI prompt the
+// user before swapping to new assets.
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -80,7 +84,25 @@ async function networkFirst(request) {
     if (request.mode === "navigate") {
       const shell = await cache.match("/");
       if (shell) return shell;
+      return offlineFallback();
     }
     return Response.error();
   }
+}
+
+// Last-resort page shown when a navigation fails offline and the app shell was
+// never cached (e.g. very first visit happened offline).
+function offlineFallback() {
+  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>peaNOT – offline</title>
+<style>html,body{margin:0;height:100%}body{display:grid;place-items:center;
+background:#f3ead8;color:#16140f;font-family:system-ui,sans-serif;text-align:center;padding:24px}
+h1{font-size:22px;margin:0 0 8px}p{opacity:.7;line-height:1.5;max-width:32ch}</style>
+</head><body><div><h1>Offline</h1><p>peaNOT ist gerade nicht erreichbar. Bitte stelle eine
+Verbindung her und versuche es erneut.</p></div></body></html>`;
+  return new Response(html, {
+    status: 503,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
 }
