@@ -73,10 +73,18 @@ export function useHistory() {
     });
   }, []);
 
+  const remove = useCallback((id: string) => {
+    setHistory((prev) => {
+      const next = prev.filter((entry) => entry.id !== id);
+      persist(next);
+      return next;
+    });
+  }, []);
+
   const clear = useCallback(() => {
     setHistory([]);
     persist([]);
   }, []);
 
-  return { history, record, clear, ready };
+  return { history, record, clear, remove, ready };
 }

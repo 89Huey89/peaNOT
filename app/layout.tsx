@@ -1,10 +1,14 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
   title: "peaNOT — Erdnuss-Check",
   description: "Privater Erdnuss-Allergen-Scanner per Barcode (Open Food Facts).",
   robots: { index: false, follow: false },
+  applicationName: "peaNOT",
+  appleWebApp: { capable: true, title: "peaNOT", statusBarStyle: "default" },
+  icons: { icon: "/icon.svg", apple: "/icon.svg" },
 };
 
 export const viewport: Viewport = {
@@ -29,7 +33,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <ServiceWorkerRegister />
+      </body>
     </html>
   );
 }

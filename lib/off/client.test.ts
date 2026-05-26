@@ -29,6 +29,7 @@ describe("fetchOffProduct", () => {
           brands: "ACME, Other",
           allergens_tags: ["en:peanuts"],
           ingredients_text: "Sugar, peanuts",
+          image_front_small_url: "https://img/peanut-bar.jpg",
         },
       }),
     );
@@ -39,6 +40,7 @@ describe("fetchOffProduct", () => {
       kind: "found",
       productName: "Peanut Bar",
       brand: "ACME",
+      imageUrl: "https://img/peanut-bar.jpg",
       fields: {
         allergens_tags: ["en:peanuts"],
         traces_tags: [],
@@ -68,6 +70,7 @@ describe("fetchOffProduct", () => {
       kind: "no-data",
       productName: "Mystery",
       brand: "ACME",
+      imageUrl: "",
     });
   });
 

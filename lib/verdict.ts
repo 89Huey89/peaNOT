@@ -75,3 +75,16 @@ export const VERDICT: Record<Verdict, VerdictCopy> = {
 export function verdictColor(verdict: Verdict, P: Palette): string {
   return P[VERDICT[verdict].colorKey];
 }
+
+// A distinct shape per verdict so status is legible without relying on color
+// alone (e.g. for color-blind users).
+const VERDICT_GLYPH: Record<Verdict, string> = {
+  safe: "✓",
+  danger: "✕",
+  trace: "⚠",
+  unknown: "?",
+};
+
+export function verdictGlyph(verdict: Verdict): string {
+  return VERDICT_GLYPH[verdict];
+}

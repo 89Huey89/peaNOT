@@ -96,6 +96,21 @@ describe("useHistory", () => {
     });
   });
 
+  it("removes a single entry by id and persists the rest", async () => {
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.record(product({ barcode: "111", productName: "First" })));
+    act(() => result.current.record(product({ barcode: "222", productName: "Second" })));
+
+    const removedId = result.current.history.find((h) => h.name === "First")!.id;
+    act(() => result.current.remove(removedId));
+
+    expect(result.current.history.map((h) => h.name)).toEqual(["Second"]);
+    const stored = JSON.parse(window.localStorage.getItem(KEY)!);
+    expect(stored.map((h: { name: string }) => h.name)).toEqual(["Second"]);
+  });
+
   it("clears history and empties storage", async () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));

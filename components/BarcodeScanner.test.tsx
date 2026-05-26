@@ -47,6 +47,11 @@ function stubMediaPlayback() {
   });
 }
 
+/** The camera now starts only on an explicit tap; click the start button. */
+async function clickStart() {
+  await userEvent.click(await screen.findByRole("button", { name: /Kamera starten/ }));
+}
+
 describe("BarcodeScanner", () => {
   beforeEach(() => {
     decodeMock.mockReset();
@@ -55,7 +60,17 @@ describe("BarcodeScanner", () => {
     stubMediaPlayback();
   });
 
-  it("auto-starts with any-orientation, high-resolution, autofocusing capture", async () => {
+  it("does not start the camera until the user taps start", async () => {
+    decodeMock.mockImplementation(async () => ({ stop: vi.fn() }));
+
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
+
+    // Nothing decodes on mount; the start affordance is shown instead.
+    expect(decodeMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Kamera starten/ })).toBeInTheDocument();
+  });
+
+  it("starts any-orientation, high-resolution, autofocusing capture on tap", async () => {
     let captured: MediaStreamConstraints | undefined;
     decodeMock.mockImplementation(
       async (constraints: MediaStreamConstraints, _video: HTMLVideoElement, _cb: DecodeCallback) => {
@@ -65,7 +80,7 @@ describe("BarcodeScanner", () => {
     );
 
     render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
-    // No tap needed – the camera starts on mount.
+    await clickStart();
     await waitFor(() => expect(decodeMock).toHaveBeenCalled());
 
     // TRY_HARDER lets ZXing decode rotated / vertically held barcodes.
@@ -88,6 +103,7 @@ describe("BarcodeScanner", () => {
 
     const onDetected = vi.fn();
     render(<BarcodeScanner {...baseProps} onDetected={onDetected} />);
+    await clickStart();
     await waitFor(() => expect(decodeMock).toHaveBeenCalled());
 
     capturedCallback({ getText: () => "4011200296908" });
@@ -106,6 +122,7 @@ describe("BarcodeScanner", () => {
 
     const onDetected = vi.fn();
     render(<BarcodeScanner {...baseProps} onDetected={onDetected} paused />);
+    await clickStart();
     await waitFor(() => expect(decodeMock).toHaveBeenCalled());
 
     capturedCallback({ getText: () => "4011200296908" });
@@ -121,6 +138,7 @@ describe("BarcodeScanner", () => {
     });
 
     render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
+    await clickStart();
     await waitFor(() => expect(decodeMock).toHaveBeenCalled());
     // Wait until the start flow settles into "scanning" (start button gone),
     // otherwise the idle→scanning transition would clear the fresh banner.
@@ -156,6 +174,7 @@ describe("BarcodeScanner", () => {
     });
 
     render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
+    await clickStart();
 
     const torchButton = await screen.findByRole("button", { name: "Licht an" });
     await userEvent.click(torchButton);
@@ -168,6 +187,7 @@ describe("BarcodeScanner", () => {
     decodeMock.mockRejectedValue(new DOMException("denied", "NotAllowedError"));
 
     render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
+    await clickStart();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/Kamerazugriff verweigert/);
     // A retry affordance is offered after denial.
@@ -178,6 +198,7 @@ describe("BarcodeScanner", () => {
     setMediaDevices(undefined);
 
     render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
+    await clickStart();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/Kamera nicht verfügbar/);
     expect(decodeMock).not.toHaveBeenCalled();

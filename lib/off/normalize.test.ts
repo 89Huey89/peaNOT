@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractBrand,
+  extractImageUrl,
   extractProductName,
   hasUsableData,
   normalizeOffProduct,
@@ -83,6 +84,25 @@ describe("extractBrand", () => {
   it("returns the first brand", () => {
     expect(extractBrand({ brands: "Ferrero, Nutella" })).toBe("Ferrero");
     expect(extractBrand({})).toBe("");
+  });
+});
+
+describe("extractImageUrl", () => {
+  it("prefers the small front image", () => {
+    expect(
+      extractImageUrl({
+        image_front_small_url: "https://img/front-small.jpg",
+        image_front_url: "https://img/front.jpg",
+        image_url: "https://img/any.jpg",
+      }),
+    ).toBe("https://img/front-small.jpg");
+  });
+
+  it("falls back through the chain then to an empty string", () => {
+    expect(extractImageUrl({ image_url: "https://img/any.jpg" })).toBe(
+      "https://img/any.jpg",
+    );
+    expect(extractImageUrl({})).toBe("");
   });
 });
 

@@ -51,6 +51,19 @@ body {
   user-select: none;
 }
 
+/* Visually hidden, but still announced by screen readers (live regions). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .btn:active {
   transform: translateY(1px);
 }
@@ -301,6 +314,13 @@ body {
   .scanner__spinner {
     animation: none;
   }
+  /* Disable the entrance/attention animations too (these are applied as
+     inline styles, so the !important is needed to override them). */
+  .stamp-in,
+  .result-in,
+  .pulse-red {
+    animation: none !important;
+  }
 }
 
 /* ─── Manual entry (ManualEntry.tsx markup, themed for cream) ─── */
@@ -357,4 +377,21 @@ body {
 
 .manual-entry__hint--ok {
   color: var(--green, #1f6b3a);
+}
+
+/* ─── History search ─── */
+.history-search {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  border-radius: 99px;
+  border: 1.5px solid rgba(22, 20, 15, 0.2);
+  background: var(--paper, #fffdf6);
+  color: var(--ink, #16140f);
+  font-family: inherit;
+}
+
+.history-search::placeholder {
+  color: var(--dim, #6b6555);
+  opacity: 0.8;
 }

@@ -8,6 +8,7 @@ import { VERDICT } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
 import ManualEntry from "@/components/ManualEntry";
+import { verdictGlyph } from "@/lib/verdict";
 import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
 
 const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
@@ -43,10 +44,22 @@ export default function ScanScreen({
       <TopBar
         P={P}
         right={
-          <div
+          <button
+            type="button"
             className="tap"
             onClick={() => onTab("profil")}
-            style={{ display: "flex", gap: 7, alignItems: "center", color: P.DIM }}
+            aria-label="Profil öffnen"
+            style={{
+              display: "flex",
+              gap: 7,
+              alignItems: "center",
+              color: P.DIM,
+              background: "transparent",
+              border: 0,
+              fontFamily: "inherit",
+              padding: "6px 2px",
+              cursor: "pointer",
+            }}
           >
             <span
               style={{
@@ -58,7 +71,7 @@ export default function ScanScreen({
               }}
             />
             <Mono style={{ opacity: 0.7 }}>live</Mono>
-          </div>
+          </button>
         }
       />
 
@@ -115,7 +128,8 @@ export default function ScanScreen({
               }}
             >
               <Mono style={{ opacity: 0.6 }}>zuletzt geprüft</Mono>
-              <span
+              <button
+                type="button"
                 className="tap"
                 onClick={() => onTab("verlauf")}
                 style={{
@@ -124,10 +138,15 @@ export default function ScanScreen({
                   opacity: 0.7,
                   textDecoration: "underline",
                   textUnderlineOffset: 3,
+                  background: "transparent",
+                  border: 0,
+                  fontFamily: "inherit",
+                  padding: 0,
+                  cursor: "pointer",
                 }}
               >
                 Alle ansehen
-              </span>
+              </button>
             </div>
             <div
               className="scroll"
@@ -142,8 +161,9 @@ export default function ScanScreen({
               {history.slice(0, 6).map((h) => {
                 const fg = verdictColor(h.verdict, P);
                 return (
-                  <div
+                  <button
                     key={h.id}
+                    type="button"
                     className="tap"
                     onClick={() => onOpen(h)}
                     style={{
@@ -152,12 +172,31 @@ export default function ScanScreen({
                       background: P.PAPER,
                       border: `1px solid ${P.INK}1a`,
                       borderRadius: 12,
+                      textAlign: "left",
+                      color: "inherit",
+                      fontFamily: "inherit",
+                      cursor: "pointer",
+                      display: "block",
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span
-                        style={{ width: 8, height: 8, borderRadius: 99, background: fg }}
-                      />
+                        aria-hidden="true"
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: 99,
+                          background: fg,
+                          color: "#fff",
+                          fontSize: 9,
+                          fontWeight: 800,
+                          display: "grid",
+                          placeItems: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {verdictGlyph(h.verdict)}
+                      </span>
                       <Mono style={{ opacity: 0.55, fontSize: 9 }}>
                         {formatRelative(h.ts)}
                       </Mono>
@@ -178,7 +217,7 @@ export default function ScanScreen({
                     >
                       {VERDICT[h.verdict].label}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>

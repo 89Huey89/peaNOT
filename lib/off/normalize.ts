@@ -38,6 +38,17 @@ export function extractBrand(raw: unknown): string {
   return brands.split(",")[0]?.trim() ?? "";
 }
 
+/** Best available product photo URL, preferring smaller front images. */
+export function extractImageUrl(raw: unknown): string {
+  const product = (raw ?? {}) as Record<string, unknown>;
+  return (
+    asString(product.image_front_small_url) ||
+    asString(product.image_front_url) ||
+    asString(product.image_small_url) ||
+    asString(product.image_url)
+  ).trim();
+}
+
 /** A product is judgeable only if it carries allergen or ingredient data. */
 export function hasUsableData(fields: OffProductFields): boolean {
   return (

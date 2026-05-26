@@ -20,7 +20,7 @@ export default function OnboardingScreen({
     <AppShell P={P}>
       <div
         style={{
-          padding: "34px 24px 0",
+          padding: "calc(34px + env(safe-area-inset-top)) 24px 0",
           display: "flex",
           flexDirection: "column",
           height: "100%",

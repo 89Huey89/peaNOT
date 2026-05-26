@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Palette } from "@/lib/theme";
-import { VERDICT, verdictColor, type Verdict } from "@/lib/verdict";
+import { VERDICT, verdictColor, verdictGlyph, type Verdict } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
 import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
@@ -20,20 +20,27 @@ export default function HistoryScreen({
   history,
   onOpen,
   onClear,
+  onRemove,
   onTab,
 }: {
   P: Palette;
   history: HistoryEntry[];
   onOpen: (entry: HistoryEntry) => void;
   onClear: () => void;
+  onRemove: (id: string) => void;
   onTab: (t: Tab) => void;
 }) {
   const [filter, setFilter] = useState<Verdict | null>(null);
+  const [query, setQuery] = useState("");
 
-  const shown = useMemo(
-    () => (filter ? history.filter((h) => h.verdict === filter) : history),
-    [history, filter],
-  );
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return history.filter((h) => {
+      if (filter && h.verdict !== filter) return false;
+      if (q && !`${h.name} ${h.brand}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [history, filter, query]);
 
   const stats = useMemo(() => {
     const weekAgo = Date.now() - 7 * 86_400_000;
@@ -72,9 +79,19 @@ export default function HistoryScreen({
       />
       <div style={{ padding: "4px 22px 0" }}>
         <SectionTitle>Verlauf</SectionTitle>
-        <p style={{ margin: "0 0 6px", fontSize: 13.5, opacity: 0.7, lineHeight: 1.45 }}>
+        <p style={{ margin: "0 0 10px", fontSize: 13.5, opacity: 0.7, lineHeight: 1.45 }}>
           Alle Scans auf diesem Gerät. Tippe für Details.
         </p>
+        {history.length > 0 ? (
+          <input
+            type="search"
+            className="history-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Verlauf durchsuchen…"
+            aria-label="Verlauf nach Produkt oder Marke durchsuchen"
+          />
+        ) : null}
       </div>
 
       <div
@@ -115,7 +132,9 @@ export default function HistoryScreen({
           <p style={{ fontSize: 13.5, opacity: 0.6, lineHeight: 1.5, marginTop: 18 }}>
             {history.length === 0
               ? "Noch keine Scans. Sobald du ein Produkt prüfst, erscheint es hier."
-              : "Keine Einträge in diesem Filter."}
+              : query.trim()
+                ? `Keine Treffer für „${query.trim()}".`
+                : "Keine Einträge in diesem Filter."}
           </p>
         ) : (
           shown.map((h) => {
@@ -123,76 +142,118 @@ export default function HistoryScreen({
             return (
               <div
                 key={h.id}
-                className="tap"
-                onClick={() => onOpen(h)}
                 style={{
                   display: "flex",
-                  gap: 12,
                   alignItems: "center",
-                  padding: "12px 0",
                   borderBottom: `1px solid ${P.INK}14`,
                 }}
               >
-                <div
+                <button
+                  type="button"
+                  className="tap"
+                  onClick={() => onOpen(h)}
                   style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 10,
-                    background: `repeating-linear-gradient(45deg, ${P.INK}10 0 6px, transparent 6px 12px), ${P.PAPER}`,
-                    border: `1px solid ${P.INK}22`,
-                    position: "relative",
-                    flexShrink: 0,
+                    flex: 1,
+                    minWidth: 0,
+                    display: "flex",
+                    gap: 12,
+                    alignItems: "center",
+                    padding: "12px 0",
+                    background: "transparent",
+                    border: 0,
+                    fontFamily: "inherit",
+                    color: "inherit",
+                    textAlign: "left",
+                    cursor: "pointer",
                   }}
                 >
                   <div
                     style={{
-                      position: "absolute",
-                      top: -3,
-                      right: -3,
-                      width: 14,
-                      height: 14,
-                      borderRadius: 99,
-                      background: fg,
-                      border: `2px solid ${P.BG}`,
-                    }}
-                  />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 8,
-                      alignItems: "baseline",
+                      width: 44,
+                      height: 44,
+                      borderRadius: 10,
+                      background: `repeating-linear-gradient(45deg, ${P.INK}10 0 6px, transparent 6px 12px), ${P.PAPER}`,
+                      border: `1px solid ${P.INK}22`,
+                      position: "relative",
+                      flexShrink: 0,
                     }}
                   >
-                    <Mono style={{ opacity: 0.55 }}>{h.brand}</Mono>
-                    <Mono style={{ opacity: 0.45, fontSize: 9 }}>{formatRelative(h.ts)}</Mono>
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: "absolute",
+                        top: -5,
+                        right: -5,
+                        width: 18,
+                        height: 18,
+                        borderRadius: 99,
+                        background: fg,
+                        border: `2px solid ${P.BG}`,
+                        color: "#fff",
+                        fontSize: 10,
+                        fontWeight: 800,
+                        display: "grid",
+                        placeItems: "center",
+                      }}
+                    >
+                      {verdictGlyph(h.verdict)}
+                    </span>
                   </div>
-                  <div
-                    style={{
-                      fontWeight: 600,
-                      fontSize: 14.5,
-                      marginTop: 1,
-                      lineHeight: 1.2,
-                      textWrap: "pretty",
-                    }}
-                  >
-                    {h.name}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 8,
+                        alignItems: "baseline",
+                      }}
+                    >
+                      <Mono style={{ opacity: 0.55 }}>{h.brand}</Mono>
+                      <Mono style={{ opacity: 0.45, fontSize: 9 }}>{formatRelative(h.ts)}</Mono>
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: 14.5,
+                        marginTop: 1,
+                        lineHeight: 1.2,
+                        textWrap: "pretty",
+                      }}
+                    >
+                      {h.name}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: fg,
+                        fontWeight: 600,
+                        marginTop: 2,
+                        fontStyle: h.verdict === "danger" ? "italic" : "normal",
+                      }}
+                    >
+                      {VERDICT[h.verdict].label}
+                    </div>
                   </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: fg,
-                      fontWeight: 600,
-                      marginTop: 2,
-                      fontStyle: h.verdict === "danger" ? "italic" : "normal",
-                    }}
-                  >
-                    {VERDICT[h.verdict].label}
-                  </div>
-                </div>
-                <span style={{ opacity: 0.4, fontSize: 18 }}>›</span>
+                </button>
+                <button
+                  type="button"
+                  className="tap"
+                  onClick={() => onRemove(h.id)}
+                  aria-label={`„${h.name}" aus dem Verlauf entfernen`}
+                  style={{
+                    background: "transparent",
+                    border: 0,
+                    color: P.DIM,
+                    fontSize: 18,
+                    lineHeight: 1,
+                    padding: "10px 4px 10px 14px",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    flexShrink: 0,
+                  }}
+                >
+                  ✕
+                </button>
               </div>
             );
           })
