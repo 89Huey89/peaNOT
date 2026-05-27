@@ -49,6 +49,16 @@ export function extractImageUrl(raw: unknown): string {
   ).trim();
 }
 
+/**
+ * Rewrite an OFF product image URL to its 100px rendition for small list
+ * thumbnails. OFF renditions look like `…/front_de.3.200.jpg`; we swap the size
+ * segment (100/200/400/full) for `100`. Returns the input unchanged when the
+ * pattern doesn't match, so callers always get a usable URL.
+ */
+export function offThumbUrl(url: string): string {
+  return url.replace(/\.(100|200|400|full)\.jpg(\?.*)?$/i, ".100.jpg$2");
+}
+
 /** A product is judgeable only if it carries allergen or ingredient data. */
 export function hasUsableData(fields: OffProductFields): boolean {
   return (

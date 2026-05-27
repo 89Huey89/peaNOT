@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchOffProduct } from "@/lib/off/client";
-import { USER_AGENT } from "@/lib/config";
+import { OFF_REVALIDATE_S, USER_AGENT } from "@/lib/config";
 
 function jsonResponse(body: unknown, init: { ok?: boolean; status?: number } = {}) {
   return {
@@ -59,6 +59,10 @@ describe("fetchOffProduct", () => {
     expect(String(url)).toContain("4011200296908.json");
     expect(String(url)).toContain("fields=");
     expect((init?.headers as Record<string, string>)["User-Agent"]).toBe(USER_AGENT);
+    // Opt into the Next data cache so repeat lookups skip the slow OFF round-trip.
+    expect((init as { next?: { revalidate?: number } })?.next?.revalidate).toBe(
+      OFF_REVALIDATE_S,
+    );
   });
 
   it("returns no-data when product is found but has no usable data", async () => {

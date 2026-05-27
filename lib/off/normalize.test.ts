@@ -5,6 +5,7 @@ import {
   extractProductName,
   hasUsableData,
   normalizeOffProduct,
+  offThumbUrl,
 } from "@/lib/off/normalize";
 
 describe("normalizeOffProduct", () => {
@@ -103,6 +104,26 @@ describe("extractImageUrl", () => {
       "https://img/any.jpg",
     );
     expect(extractImageUrl({})).toBe("");
+  });
+});
+
+describe("offThumbUrl", () => {
+  it("downsizes known OFF renditions to 100px", () => {
+    const base = "https://images.openfoodfacts.org/images/products/401/120/029/6908/front_de.3";
+    expect(offThumbUrl(`${base}.200.jpg`)).toBe(`${base}.100.jpg`);
+    expect(offThumbUrl(`${base}.400.jpg`)).toBe(`${base}.100.jpg`);
+    expect(offThumbUrl(`${base}.full.jpg`)).toBe(`${base}.100.jpg`);
+  });
+
+  it("preserves a trailing query string", () => {
+    expect(offThumbUrl("https://img/front_de.3.200.jpg?rev=7")).toBe(
+      "https://img/front_de.3.100.jpg?rev=7",
+    );
+  });
+
+  it("returns the input unchanged when the pattern doesn't match", () => {
+    expect(offThumbUrl("https://img/any.png")).toBe("https://img/any.png");
+    expect(offThumbUrl("")).toBe("");
   });
 });
 

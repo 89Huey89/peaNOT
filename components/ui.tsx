@@ -165,7 +165,8 @@ export function TabBar({
     { id: "profil", label: "Profil", icon: "◐" },
   ];
   return (
-    <div
+    <nav
+      aria-label="Hauptnavigation"
       style={{
         position: "absolute",
         left: 0,
@@ -187,6 +188,7 @@ export function TabBar({
             type="button"
             className="tap"
             onClick={() => onTab(it.id)}
+            aria-current={active ? "page" : undefined}
             style={{
               flex: 1,
               background: active ? P.INK : "transparent",
@@ -209,7 +211,7 @@ export function TabBar({
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }
 

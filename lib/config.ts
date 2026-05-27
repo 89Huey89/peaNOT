@@ -25,6 +25,15 @@ export const OFF_FIELDS = [
 
 export const OFF_TIMEOUT_MS = 6000;
 
+/**
+ * Seconds the Next data cache may reuse an OFF product response. Product
+ * allergen data is stable, so reusing it across allergen profiles, re-scans
+ * and users avoids the slow OFF round-trip while the verdict is still
+ * recomputed per request. Detection stays server-side, so this never changes
+ * the fail-safe verdict — only how often OFF itself is hit.
+ */
+export const OFF_REVALIDATE_S = 3600;
+
 /** Search-a-licious full-text search endpoint (product name search). */
 export const OFF_SEARCH_URL = "https://search.openfoodfacts.org/search";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Palette } from "@/lib/theme";
 import { verdictColor } from "@/lib/verdict";
@@ -16,6 +16,14 @@ const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
   ssr: false,
   loading: () => <p className="scanner__hint">Kamera wird geladen…</p>,
 });
+
+function scrollPanelIntoView(el: HTMLElement | null): void {
+  if (!el) return;
+  const reduce =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+}
 
 export default function ScanScreen({
   P,
@@ -40,6 +48,18 @@ export default function ScanScreen({
 }) {
   const [manualOpen, setManualOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const manualPanelRef = useRef<HTMLDivElement>(null);
+  const searchPanelRef = useRef<HTMLDivElement>(null);
+
+  // Bring a just-opened panel into view so its form isn't left below the fold.
+  useEffect(() => {
+    if (!manualOpen) return;
+    scrollPanelIntoView(manualPanelRef.current);
+  }, [manualOpen]);
+  useEffect(() => {
+    if (!searchOpen) return;
+    scrollPanelIntoView(searchPanelRef.current);
+  }, [searchOpen]);
 
   return (
     <AppShell P={P}>
@@ -97,6 +117,8 @@ export default function ScanScreen({
           type="button"
           className="tap"
           onClick={() => setManualOpen((o) => !o)}
+          aria-expanded={manualOpen}
+          aria-controls="manual-entry-panel"
           style={{
             width: "100%",
             marginTop: 10,
@@ -114,7 +136,7 @@ export default function ScanScreen({
         </button>
 
         {manualOpen ? (
-          <div style={{ marginTop: 12 }}>
+          <div id="manual-entry-panel" ref={manualPanelRef} style={{ marginTop: 12 }}>
             <ManualEntry onSubmit={onDetected} disabled={loading} />
           </div>
         ) : null}
@@ -123,6 +145,8 @@ export default function ScanScreen({
           type="button"
           className="tap"
           onClick={() => setSearchOpen((o) => !o)}
+          aria-expanded={searchOpen}
+          aria-controls="product-search-panel"
           style={{
             width: "100%",
             marginTop: 10,
@@ -140,7 +164,7 @@ export default function ScanScreen({
         </button>
 
         {searchOpen ? (
-          <div style={{ marginTop: 12 }}>
+          <div id="product-search-panel" ref={searchPanelRef} style={{ marginTop: 12 }}>
             <ProductSearch P={P} onSelect={onDetected} disabled={loading} />
           </div>
         ) : null}
