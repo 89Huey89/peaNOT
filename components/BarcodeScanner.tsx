@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import type { IScannerControls } from "@zxing/browser";
 import { sanitizeBarcode } from "@/lib/barcode";
 import { shouldAcceptScan, type LastScan } from "@/lib/scan";
@@ -209,7 +210,7 @@ export default function BarcodeScanner({
         ) : null}
         {detectedCode !== null ? (
           <div className="scanner__banner" role="status" aria-live="polite">
-            ✓ Barcode erkannt: {detectedCode}
+            <Check size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 4 }} />Barcode erkannt: {detectedCode}
           </div>
         ) : null}
         {loading ? (

@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Palette } from "@/lib/theme";
 import { offThumbUrl } from "@/lib/off/normalize";
 import { useProductSearch } from "@/components/useProductSearch";
+import { Package } from "lucide-react";
 
 interface ProductSearchProps {
   P: Palette;
@@ -163,7 +164,7 @@ export default function ProductSearch({ P, onSelect, disabled }: ProductSearchPr
                       fontSize: 16,
                     }}
                   >
-                    🍫
+                    <Package size={20} aria-hidden="true" />
                   </span>
                 )}
                 <span style={{ minWidth: 0 }}>

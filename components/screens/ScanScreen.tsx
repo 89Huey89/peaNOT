@@ -11,6 +11,7 @@ import ManualEntry from "@/components/ManualEntry";
 import ProductSearch from "@/components/ProductSearch";
 import { verdictGlyph } from "@/lib/verdict";
 import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
+import { Keyboard, Search } from "lucide-react";
 
 const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
   ssr: false,
@@ -132,7 +133,7 @@ export default function ScanScreen({
             fontFamily: "inherit",
           }}
         >
-          ⌨ &nbsp;Barcode manuell eingeben
+          <Keyboard size={15} aria-hidden="true" /> &nbsp;Barcode manuell eingeben
         </button>
 
         {manualOpen ? (
@@ -160,7 +161,7 @@ export default function ScanScreen({
             fontFamily: "inherit",
           }}
         >
-          🔎 &nbsp;Nach Name suchen
+          <Search size={15} aria-hidden="true" /> &nbsp;Nach Name suchen
         </button>
 
         {searchOpen ? (

@@ -7,6 +7,7 @@ import { statusToVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/
 import { getProfiles } from "@/lib/allergens/profile";
 import { beep, vibrate } from "@/lib/feedback";
 import { AppShell, Chip, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
+import { ArrowRight, RotateCcw, X } from "lucide-react";
 
 function shortEan(ean: string): string {
   return ean.length > 8 ? `${ean.slice(0, 4)}…${ean.slice(-4)}` : ean;
@@ -146,7 +147,7 @@ export default function ResultScreen({
               padding: "6px 4px",
             }}
           >
-            ✕ Schließen
+            <X size={14} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 4 }} />Schließen
           </button>
         }
       />
@@ -440,7 +441,7 @@ export default function ResultScreen({
                   opacity: loading ? 0.6 : 1,
                 }}
               >
-                {loading ? "Prüfe erneut…" : "↻  Erneut prüfen"}
+                {loading ? "Prüfe erneut…" : <><RotateCcw size={14} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 6 }} />Erneut prüfen</>}
               </button>
             </div>
           ) : null}
@@ -482,7 +483,7 @@ export default function ResultScreen({
             animation: alarm ? "pulseRed 1.6s ease-out 1" : "none",
           }}
         >
-          {alarm ? "Verstanden — neu scannen" : "Nächsten Code scannen →"}
+          {alarm ? "Verstanden — neu scannen" : <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>Nächsten Code scannen <ArrowRight size={16} aria-hidden="true" /></span>}
         </button>
       </div>
     </AppShell>

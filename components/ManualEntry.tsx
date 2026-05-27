@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { Check } from "lucide-react";
 import { isValidBarcode, sanitizeBarcode } from "@/lib/barcode";
 
 interface ManualEntryProps {
@@ -41,7 +42,7 @@ export default function ManualEntry({ onSubmit, disabled }: ManualEntryProps) {
       </div>
       {value === "" ? null : valid ? (
         <p id="manual-barcode-hint" className="manual-entry__hint manual-entry__hint--ok">
-          ✓ Gültige Länge
+          <Check size={12} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 4 }} />Gültige Länge
         </p>
       ) : (
         <p id="manual-barcode-hint" className="manual-entry__hint" role="status">

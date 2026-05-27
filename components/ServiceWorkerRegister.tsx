@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 
 const INSTALL_DISMISSED_KEY = "peanot.install-dismissed.v1";
 
@@ -229,7 +230,7 @@ function Banner({
             opacity: 0.7,
           }}
         >
-          ✕
+          <X size={16} aria-hidden="true" />
         </button>
       ) : null}
     </div>
