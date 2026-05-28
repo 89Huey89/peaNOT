@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import { VERDICT, verdictColor, type Verdict } from "@/lib/verdict";
+import { History, ScanLine, User } from "lucide-react";
 
 const SERIF = "'Fraunces', serif";
 const MONO = "'JetBrains Mono', monospace";
@@ -159,10 +160,10 @@ export function TabBar({
   tab: Tab;
   onTab: (t: Tab) => void;
 }) {
-  const items: { id: Tab; label: string; icon: string }[] = [
-    { id: "scan", label: "Scan", icon: "◎" },
-    { id: "verlauf", label: "Verlauf", icon: "≡" },
-    { id: "profil", label: "Profil", icon: "◐" },
+  const items: { id: Tab; label: string; icon: ReactNode }[] = [
+    { id: "scan", label: "Scan", icon: <ScanLine size={16} aria-hidden="true" /> },
+    { id: "verlauf", label: "Verlauf", icon: <History size={16} aria-hidden="true" /> },
+    { id: "profil", label: "Profil", icon: <User size={16} aria-hidden="true" /> },
   ];
   return (
     <nav
@@ -206,7 +207,7 @@ export function TabBar({
               transition: "background .18s ease",
             }}
           >
-            <span aria-hidden="true" style={{ fontSize: 14, opacity: active ? 1 : 0.6 }}>{it.icon}</span>
+            <span style={{ display: "flex", opacity: active ? 1 : 0.6 }}>{it.icon}</span>
             <span>{it.label}</span>
           </button>
         );

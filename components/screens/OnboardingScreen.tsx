@@ -1,6 +1,7 @@
 import type { Palette } from "@/lib/theme";
 import { verdictColor, type Verdict } from "@/lib/verdict";
 import { AppShell, Logo, Mono } from "@/components/ui";
+import { ArrowRight } from "lucide-react";
 
 const STATES: [Verdict, string][] = [
   ["safe", "Sicher"],
@@ -121,7 +122,7 @@ export default function OnboardingScreen({
               letterSpacing: 0.2,
             }}
           >
-            Loslegen →
+            <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>Loslegen <ArrowRight size={16} aria-hidden="true" /></span>
           </button>
           <div style={{ textAlign: "center", marginTop: 10 }}>
             <Mono style={{ opacity: 0.5 }}>Wir bitten gleich um Kamera-Zugriff</Mono>

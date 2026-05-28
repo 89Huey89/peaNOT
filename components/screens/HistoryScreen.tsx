@@ -6,6 +6,7 @@ import { VERDICT, verdictColor, verdictGlyph, type Verdict } from "@/lib/verdict
 import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
 import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
+import { X } from "lucide-react";
 
 const FILTERS: { label: string; verdict: Verdict | null }[] = [
   { label: "Alle", verdict: null },
@@ -254,7 +255,7 @@ export default function HistoryScreen({
                     flexShrink: 0,
                   }}
                 >
-                  ✕
+                  <X size={16} aria-hidden="true" />
                 </button>
               </div>
             );

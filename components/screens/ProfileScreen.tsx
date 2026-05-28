@@ -5,6 +5,7 @@ import { ACCENTS, type Accent, type Palette, type ThemeMode } from "@/lib/theme"
 import { ALLERGEN_LIST } from "@/lib/allergens/profile";
 import type { Prefs } from "@/components/usePrefs";
 import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
+import { RotateCcw, User } from "lucide-react";
 
 function Section({
   P,
@@ -152,7 +153,7 @@ export default function ProfileScreen({
               flexShrink: 0,
             }}
           >
-            ◐
+            <User size={28} aria-hidden="true" />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
@@ -343,7 +344,7 @@ export default function ProfileScreen({
               fontFamily: "inherit",
             }}
           >
-            ↺ &nbsp;Onboarding nochmal zeigen
+            <RotateCcw size={14} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 6 }} />Onboarding nochmal zeigen
           </button>
         </Section>
 
