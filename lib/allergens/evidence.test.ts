@@ -45,4 +45,22 @@ describe("findMention (profile-driven fallback)", () => {
   it("returns null when the allergen is absent", () => {
     expect(findMention("Reis, Wasser, Salz", ALLERGEN_PROFILES.fish)).toBeNull();
   });
+
+  it("spans consecutive tokens for a multi-word keyword", () => {
+    expect(
+      findMention(
+        "Schokolade, Brazil nut, Zucker",
+        ALLERGEN_PROFILES["tree-nuts"],
+      ),
+    ).toBe("Brazil nut");
+    expect(
+      findMention("Wein, Sulfur dioxide, Aromen", ALLERGEN_PROFILES.sulphites),
+    ).toBe("Sulfur dioxide");
+  });
+
+  it("still prefers a single-token match over a wider window", () => {
+    expect(
+      findMention("Zucker, Haselnuss, Salz", ALLERGEN_PROFILES["tree-nuts"]),
+    ).toBe("Haselnuss");
+  });
 });
