@@ -11,8 +11,9 @@ import ScanScreen from "@/components/screens/ScanScreen";
 import ResultScreen from "@/components/screens/ResultScreen";
 import HistoryScreen from "@/components/screens/HistoryScreen";
 import ProfileScreen from "@/components/screens/ProfileScreen";
+import PhraseScreen from "@/components/screens/PhraseScreen";
 
-type Route = "onboarding" | "scan" | "verlauf" | "profil" | "result";
+type Route = "onboarding" | "scan" | "verlauf" | "profil" | "result" | "karte";
 
 export default function Home() {
   const { prefs, setPref, ready: prefsReady } = usePrefs();
@@ -97,6 +98,8 @@ export default function Home() {
         onTab={(t: Tab) => setRoute(t)}
       />
     );
+  } else if (route === "karte") {
+    screen = <PhraseScreen P={P} onBack={() => setRoute("scan")} />;
   } else if (route === "profil") {
     screen = (
       <ProfileScreen
@@ -124,6 +127,7 @@ export default function Home() {
           history={history}
           onDetected={runLookup}
           onOpen={openEntry}
+          onOpenCard={() => setRoute("karte")}
           onTab={(t: Tab) => setRoute(t)}
         />
         {route === "result" && result ? (
