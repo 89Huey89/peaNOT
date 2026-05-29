@@ -1,13 +1,27 @@
 /**
  * Ready-to-show allergy phrases for handing the phone to staff in a shop or
- * restaurant abroad. The text is peanut-specific (the app's namesake allergen)
- * and asks two things: which items are safe, and to avoid cross-contamination.
+ * restaurant abroad. The card now reflects the allergens the user selected for
+ * scanning (see usePrefs.selectedAllergens), so a child allergic to e.g. milk
+ * and egg gets a card that names exactly those — not a hard-coded peanut card.
  *
  * SAFETY-CRITICAL: these sentences are shown to staff who decide what a child
  * with a life-threatening allergy may eat. Translations must be reviewed by a
- * human before changing. Each language must cover every venue (enforced by
- * lib/phrases.test.ts) so a picked language can never fall back to silence.
+ * human before changing.
+ *
+ * To stay safe across 16 languages with any combination of allergens, the card
+ * is built from three reviewed parts instead of interpolating allergen names
+ * mid-sentence (which would break gender/case/article agreement in most
+ * languages):
+ *   1. a LEAD sentence that introduces the allergy and ends with a colon list
+ *      placeholder `{LIST}` — a colon list takes citation forms, so no
+ *      declension is needed;
+ *   2. the joined allergen TERMS (one citation form per allergen per language);
+ *   3. a VENUE sentence asking which items are safe + a clean-tools request.
+ * Every language must cover every venue and every allergen (enforced by
+ * lib/phrases.test.ts) so a picked language/allergen can never fall to silence.
  */
+
+import { ALLERGEN_KEYS, getProfile } from "@/lib/allergens/profile";
 
 export type VenueKey = "icecream" | "restaurant" | "bakery" | "general";
 
@@ -57,181 +71,567 @@ export const PHRASE_LANGS: PhraseLang[] = [
   { code: "ja", label: "日本語", english: "Japanese" },
 ];
 
+interface LangPhrase {
+  /**
+   * Intro sentence(s). MUST contain `{LIST}`, which is replaced by the joined,
+   * comma-separated allergen terms. Ends the sentence itself (incl. final
+   * punctuation) so the venue sentence can simply follow.
+   */
+  lead: string;
+  /** Separator between allergen terms in the list (locale-appropriate comma). */
+  sep: string;
+  /** Venue question + clean-tools request, referring back to "these allergens". */
+  venues: Record<VenueKey, string>;
+}
+
 /**
- * code → venue → sentence. Keep the two-part structure in every language:
- * (1) "my child has a severe peanut allergy", (2) which items are safe + a
- * request to avoid cross-contamination.
+ * Per-language phrasing. The venue sentences mirror the previously reviewed
+ * peanut wording, with the allergen-specific clause generalised to
+ * "these allergens" (the concrete list lives in the lead).
  */
-export const PHRASES: Record<string, Record<VenueKey, string>> = {
+export const LANG_PHRASES: Record<string, LangPhrase> = {
   de: {
-    icecream:
-      "Mein Kind hat eine schwere Erdnussallergie. Welche Eissorten sind frei von Erdnüssen und ohne Risiko einer Verunreinigung? Bitte verwenden Sie einen sauberen, frisch abgewaschenen Portionierer.",
-    restaurant:
-      "Mein Kind hat eine schwere Erdnussallergie. Welche Gerichte sind frei von Erdnüssen und ohne Risiko einer Verunreinigung? Bitte bereiten Sie das Essen mit sauberem Geschirr und sauberen Arbeitsflächen zu.",
-    bakery:
-      "Mein Kind hat eine schwere Erdnussallergie. Welche Backwaren sind frei von Erdnüssen und ohne Risiko einer Verunreinigung? Bitte verwenden Sie sauberes Werkzeug.",
-    general:
-      "Mein Kind hat eine schwere Erdnussallergie. Schon kleinste Mengen können gefährlich sein. Bitte stellen Sie sicher, dass das Essen keine Erdnüsse enthält und ohne Risiko einer Verunreinigung zubereitet wird.",
+    lead: "Mein Kind hat eine schwere, lebensbedrohliche Allergie. Schon kleinste Mengen können gefährlich sein. Es darf keines der folgenden Allergene zu sich nehmen: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Welche Eissorten sind frei von diesen Allergenen und ohne Risiko einer Verunreinigung? Bitte verwenden Sie einen sauberen, frisch abgewaschenen Portionierer.",
+      restaurant:
+        "Welche Gerichte sind frei von diesen Allergenen und ohne Risiko einer Verunreinigung? Bitte bereiten Sie das Essen mit sauberem Geschirr und sauberen Arbeitsflächen zu.",
+      bakery:
+        "Welche Backwaren sind frei von diesen Allergenen und ohne Risiko einer Verunreinigung? Bitte verwenden Sie sauberes Werkzeug.",
+      general:
+        "Bitte stellen Sie sicher, dass das Essen keines dieser Allergene enthält und ohne Risiko einer Verunreinigung zubereitet wird.",
+    },
   },
   en: {
-    icecream:
-      "My child has a severe peanut allergy. Which flavours are free from peanuts and free from any risk of cross-contamination? Please use a clean, freshly washed scoop.",
-    restaurant:
-      "My child has a severe peanut allergy. Which dishes are free from peanuts and free from any risk of cross-contamination? Please prepare the meal with clean utensils and surfaces.",
-    bakery:
-      "My child has a severe peanut allergy. Which baked goods are free from peanuts and free from any risk of cross-contamination? Please use clean utensils.",
-    general:
-      "My child has a severe peanut allergy. Even the smallest amount can be dangerous. Please make sure the food contains no peanuts and is prepared without any risk of cross-contamination.",
+    lead: "My child has a severe, life-threatening allergy. Even the smallest amount can be dangerous. They must not eat any of the following: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Which flavours are free from these allergens and free from any risk of cross-contamination? Please use a clean, freshly washed scoop.",
+      restaurant:
+        "Which dishes are free from these allergens and free from any risk of cross-contamination? Please prepare the meal with clean utensils and surfaces.",
+      bakery:
+        "Which baked goods are free from these allergens and free from any risk of cross-contamination? Please use clean utensils.",
+      general:
+        "Please make sure the food contains none of these allergens and is prepared without any risk of cross-contamination.",
+    },
   },
   it: {
-    icecream:
-      "Mio figlio ha una grave allergia alle arachidi. Quali gusti sono senza arachidi e senza rischio di contaminazione? Per favore, usi una paletta pulita e appena lavata.",
-    restaurant:
-      "Mio figlio ha una grave allergia alle arachidi. Quali piatti sono senza arachidi e senza rischio di contaminazione? Per favore, prepari il pasto con utensili e superfici puliti.",
-    bakery:
-      "Mio figlio ha una grave allergia alle arachidi. Quali prodotti da forno sono senza arachidi e senza rischio di contaminazione? Per favore, usi utensili puliti.",
-    general:
-      "Mio figlio ha una grave allergia alle arachidi. Anche una piccolissima quantità può essere pericolosa. Per favore, si assicuri che il cibo non contenga arachidi e sia preparato senza rischio di contaminazione.",
+    lead: "Mio figlio ha un'allergia grave e potenzialmente letale. Anche una piccolissima quantità può essere pericolosa. Non deve assumere nessuno dei seguenti allergeni: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Quali gusti sono senza questi allergeni e senza rischio di contaminazione? Per favore, usi una paletta pulita e appena lavata.",
+      restaurant:
+        "Quali piatti sono senza questi allergeni e senza rischio di contaminazione? Per favore, prepari il pasto con utensili e superfici puliti.",
+      bakery:
+        "Quali prodotti da forno sono senza questi allergeni e senza rischio di contaminazione? Per favore, usi utensili puliti.",
+      general:
+        "Per favore, si assicuri che il cibo non contenga nessuno di questi allergeni e sia preparato senza rischio di contaminazione.",
+    },
   },
   fr: {
-    icecream:
-      "Mon enfant a une grave allergie aux arachides (cacahuètes). Quels parfums sont sans arachides et sans risque de contamination ? Merci d'utiliser une cuillère à glace propre et fraîchement lavée.",
-    restaurant:
-      "Mon enfant a une grave allergie aux arachides (cacahuètes). Quels plats sont sans arachides et sans risque de contamination ? Merci de préparer le repas avec des ustensiles et des surfaces propres.",
-    bakery:
-      "Mon enfant a une grave allergie aux arachides (cacahuètes). Quels produits sont sans arachides et sans risque de contamination ? Merci d'utiliser des ustensiles propres.",
-    general:
-      "Mon enfant a une grave allergie aux arachides (cacahuètes). Même une très petite quantité peut être dangereuse. Merci de vous assurer que le plat ne contient pas d'arachides et qu'il est préparé sans risque de contamination.",
+    lead: "Mon enfant a une allergie grave, potentiellement mortelle. Même une très petite quantité peut être dangereuse. Il ne doit consommer aucun des allergènes suivants : {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Quels parfums sont sans ces allergènes et sans risque de contamination ? Merci d'utiliser une cuillère à glace propre et fraîchement lavée.",
+      restaurant:
+        "Quels plats sont sans ces allergènes et sans risque de contamination ? Merci de préparer le repas avec des ustensiles et des surfaces propres.",
+      bakery:
+        "Quels produits sont sans ces allergènes et sans risque de contamination ? Merci d'utiliser des ustensiles propres.",
+      general:
+        "Merci de vous assurer que le plat ne contient aucun de ces allergènes et qu'il est préparé sans risque de contamination.",
+    },
   },
   es: {
-    icecream:
-      "Mi hijo tiene una alergia grave al cacahuete (maní). ¿Qué sabores no contienen cacahuete y no tienen riesgo de contaminación? Por favor, use una cuchara de helado limpia y recién lavada.",
-    restaurant:
-      "Mi hijo tiene una alergia grave al cacahuete (maní). ¿Qué platos no contienen cacahuete y no tienen riesgo de contaminación? Por favor, prepare la comida con utensilios y superficies limpios.",
-    bakery:
-      "Mi hijo tiene una alergia grave al cacahuete (maní). ¿Qué productos no contienen cacahuete y no tienen riesgo de contaminación? Por favor, use utensilios limpios.",
-    general:
-      "Mi hijo tiene una alergia grave al cacahuete (maní). Incluso una cantidad muy pequeña puede ser peligrosa. Por favor, asegúrese de que la comida no contenga cacahuete y se prepare sin riesgo de contaminación.",
+    lead: "Mi hijo tiene una alergia grave y potencialmente mortal. Incluso una cantidad muy pequeña puede ser peligrosa. No debe consumir ninguno de los siguientes alérgenos: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "¿Qué sabores no contienen estos alérgenos y no tienen riesgo de contaminación? Por favor, use una cuchara de helado limpia y recién lavada.",
+      restaurant:
+        "¿Qué platos no contienen estos alérgenos y no tienen riesgo de contaminación? Por favor, prepare la comida con utensilios y superficies limpios.",
+      bakery:
+        "¿Qué productos no contienen estos alérgenos y no tienen riesgo de contaminación? Por favor, use utensilios limpios.",
+      general:
+        "Por favor, asegúrese de que la comida no contenga ninguno de estos alérgenos y se prepare sin riesgo de contaminación.",
+    },
   },
   pt: {
-    icecream:
-      "O meu filho tem uma alergia grave a amendoim. Quais sabores não contêm amendoim e não têm risco de contaminação? Por favor, use uma colher de gelado limpa e acabada de lavar.",
-    restaurant:
-      "O meu filho tem uma alergia grave a amendoim. Quais pratos não contêm amendoim e não têm risco de contaminação? Por favor, prepare a refeição com utensílios e superfícies limpos.",
-    bakery:
-      "O meu filho tem uma alergia grave a amendoim. Quais produtos não contêm amendoim e não têm risco de contaminação? Por favor, use utensílios limpos.",
-    general:
-      "O meu filho tem uma alergia grave a amendoim. Mesmo uma quantidade muito pequena pode ser perigosa. Por favor, certifique-se de que a comida não contém amendoim e é preparada sem risco de contaminação.",
+    lead: "O meu filho tem uma alergia grave e potencialmente fatal. Mesmo uma quantidade muito pequena pode ser perigosa. Não pode consumir nenhum dos seguintes alérgenos: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Quais sabores não contêm estes alérgenos e não têm risco de contaminação? Por favor, use uma colher de gelado limpa e acabada de lavar.",
+      restaurant:
+        "Quais pratos não contêm estes alérgenos e não têm risco de contaminação? Por favor, prepare a refeição com utensílios e superfícies limpos.",
+      bakery:
+        "Quais produtos não contêm estes alérgenos e não têm risco de contaminação? Por favor, use utensílios limpos.",
+      general:
+        "Por favor, certifique-se de que a comida não contém nenhum destes alérgenos e é preparada sem risco de contaminação.",
+    },
   },
   nl: {
-    icecream:
-      "Mijn kind heeft een ernstige pinda-allergie. Welke smaken zijn vrij van pinda's en zonder risico op kruisbesmetting? Gebruik alstublieft een schone, net gewassen ijslepel.",
-    restaurant:
-      "Mijn kind heeft een ernstige pinda-allergie. Welke gerechten zijn vrij van pinda's en zonder risico op kruisbesmetting? Bereid de maaltijd alstublieft met schoon gereedschap en schone oppervlakken.",
-    bakery:
-      "Mijn kind heeft een ernstige pinda-allergie. Welke gebakken producten zijn vrij van pinda's en zonder risico op kruisbesmetting? Gebruik alstublieft schoon gereedschap.",
-    general:
-      "Mijn kind heeft een ernstige pinda-allergie. Zelfs een heel kleine hoeveelheid kan gevaarlijk zijn. Zorg er alstublieft voor dat het eten geen pinda's bevat en zonder risico op kruisbesmetting wordt bereid.",
+    lead: "Mijn kind heeft een ernstige, levensbedreigende allergie. Zelfs een heel kleine hoeveelheid kan gevaarlijk zijn. Het mag geen van de volgende allergenen binnenkrijgen: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Welke smaken zijn vrij van deze allergenen en zonder risico op kruisbesmetting? Gebruik alstublieft een schone, net gewassen ijslepel.",
+      restaurant:
+        "Welke gerechten zijn vrij van deze allergenen en zonder risico op kruisbesmetting? Bereid de maaltijd alstublieft met schoon gereedschap en schone oppervlakken.",
+      bakery:
+        "Welke gebakken producten zijn vrij van deze allergenen en zonder risico op kruisbesmetting? Gebruik alstublieft schoon gereedschap.",
+      general:
+        "Zorg er alstublieft voor dat het eten geen van deze allergenen bevat en zonder risico op kruisbesmetting wordt bereid.",
+    },
   },
   pl: {
-    icecream:
-      "Moje dziecko ma ciężką alergię na orzeszki ziemne. Które smaki są bez orzeszków ziemnych i bez ryzyka zanieczyszczenia? Proszę użyć czystej, świeżo umytej łyżki do lodów.",
-    restaurant:
-      "Moje dziecko ma ciężką alergię na orzeszki ziemne. Które dania są bez orzeszków ziemnych i bez ryzyka zanieczyszczenia? Proszę przygotować posiłek czystymi narzędziami i na czystych powierzchniach.",
-    bakery:
-      "Moje dziecko ma ciężką alergię na orzeszki ziemne. Które wypieki są bez orzeszków ziemnych i bez ryzyka zanieczyszczenia? Proszę użyć czystych narzędzi.",
-    general:
-      "Moje dziecko ma ciężką alergię na orzeszki ziemne. Nawet niewielka ilość może być niebezpieczna. Proszę upewnić się, że jedzenie nie zawiera orzeszków ziemnych i jest przygotowane bez ryzyka zanieczyszczenia.",
+    lead: "Moje dziecko ma ciężką, zagrażającą życiu alergię. Nawet niewielka ilość może być niebezpieczna. Nie może spożywać żadnego z następujących alergenów: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Które smaki są wolne od tych alergenów i bez ryzyka zanieczyszczenia? Proszę użyć czystej, świeżo umytej łyżki do lodów.",
+      restaurant:
+        "Które dania są wolne od tych alergenów i bez ryzyka zanieczyszczenia? Proszę przygotować posiłek czystymi narzędziami i na czystych powierzchniach.",
+      bakery:
+        "Które wypieki są wolne od tych alergenów i bez ryzyka zanieczyszczenia? Proszę użyć czystych narzędzi.",
+      general:
+        "Proszę upewnić się, że jedzenie nie zawiera żadnego z tych alergenów i jest przygotowane bez ryzyka zanieczyszczenia.",
+    },
   },
   cs: {
-    icecream:
-      "Moje dítě má těžkou alergii na arašídy. Které příchutě jsou bez arašídů a bez rizika kontaminace? Použijte prosím čistou, čerstvě umytou lžíci na zmrzlinu.",
-    restaurant:
-      "Moje dítě má těžkou alergii na arašídy. Která jídla jsou bez arašídů a bez rizika kontaminace? Připravte prosím jídlo čistým náčiním a na čistých plochách.",
-    bakery:
-      "Moje dítě má těžkou alergii na arašídy. Které pečivo je bez arašídů a bez rizika kontaminace? Použijte prosím čisté náčiní.",
-    general:
-      "Moje dítě má těžkou alergii na arašídy. I velmi malé množství může být nebezpečné. Ujistěte se prosím, že jídlo neobsahuje arašídy a je připraveno bez rizika kontaminace.",
+    lead: "Moje dítě má těžkou, život ohrožující alergii. I velmi malé množství může být nebezpečné. Nesmí konzumovat žádný z následujících alergenů: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Které příchutě jsou bez těchto alergenů a bez rizika kontaminace? Použijte prosím čistou, čerstvě umytou lžíci na zmrzlinu.",
+      restaurant:
+        "Která jídla jsou bez těchto alergenů a bez rizika kontaminace? Připravte prosím jídlo čistým náčiním a na čistých plochách.",
+      bakery:
+        "Které pečivo je bez těchto alergenů a bez rizika kontaminace? Použijte prosím čisté náčiní.",
+      general:
+        "Ujistěte se prosím, že jídlo neobsahuje žádný z těchto alergenů a je připraveno bez rizika kontaminace.",
+    },
   },
   hr: {
-    icecream:
-      "Moje dijete ima tešku alergiju na kikiriki. Koji su okusi bez kikirikija i bez rizika od kontaminacije? Molim vas, upotrijebite čistu, svježe opranu žlicu za sladoled.",
-    restaurant:
-      "Moje dijete ima tešku alergiju na kikiriki. Koja su jela bez kikirikija i bez rizika od kontaminacije? Molim vas, pripremite obrok čistim priborom i na čistim površinama.",
-    bakery:
-      "Moje dijete ima tešku alergiju na kikiriki. Koji su pekarski proizvodi bez kikirikija i bez rizika od kontaminacije? Molim vas, upotrijebite čisti pribor.",
-    general:
-      "Moje dijete ima tešku alergiju na kikiriki. Čak i vrlo mala količina može biti opasna. Molim vas, osigurajte da hrana ne sadrži kikiriki i da je pripremljena bez rizika od kontaminacije.",
+    lead: "Moje dijete ima tešku, po život opasnu alergiju. Čak i vrlo mala količina može biti opasna. Ne smije konzumirati nijedan od sljedećih alergena: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Koji su okusi bez ovih alergena i bez rizika od kontaminacije? Molim vas, upotrijebite čistu, svježe opranu žlicu za sladoled.",
+      restaurant:
+        "Koja su jela bez ovih alergena i bez rizika od kontaminacije? Molim vas, pripremite obrok čistim priborom i na čistim površinama.",
+      bakery:
+        "Koji su pekarski proizvodi bez ovih alergena i bez rizika od kontaminacije? Molim vas, upotrijebite čisti pribor.",
+      general:
+        "Molim vas, osigurajte da hrana ne sadrži nijedan od ovih alergena i da je pripremljena bez rizika od kontaminacije.",
+    },
   },
   el: {
-    icecream:
-      "Το παιδί μου έχει σοβαρή αλλεργία στα αράπικα φιστίκια (αραχίδες). Ποιες γεύσεις είναι χωρίς φιστίκια και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ χρησιμοποιήστε μια καθαρή, φρεσκοπλυμένη σέσουλα παγωτού.",
-    restaurant:
-      "Το παιδί μου έχει σοβαρή αλλεργία στα αράπικα φιστίκια (αραχίδες). Ποια πιάτα είναι χωρίς φιστίκια και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ ετοιμάστε το φαγητό με καθαρά σκεύη και επιφάνειες.",
-    bakery:
-      "Το παιδί μου έχει σοβαρή αλλεργία στα αράπικα φιστίκια (αραχίδες). Ποια προϊόντα είναι χωρίς φιστίκια και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ χρησιμοποιήστε καθαρά σκεύη.",
-    general:
-      "Το παιδί μου έχει σοβαρή αλλεργία στα αράπικα φιστίκια (αραχίδες). Ακόμη και μια πολύ μικρή ποσότητα μπορεί να είναι επικίνδυνη. Παρακαλώ βεβαιωθείτε ότι το φαγητό δεν περιέχει φιστίκια και ότι παρασκευάζεται χωρίς κίνδυνο επιμόλυνσης.",
+    lead: "Το παιδί μου έχει σοβαρή, απειλητική για τη ζωή αλλεργία. Ακόμη και μια πολύ μικρή ποσότητα μπορεί να είναι επικίνδυνη. Δεν πρέπει να καταναλώσει κανένα από τα παρακάτω αλλεργιογόνα: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Ποιες γεύσεις είναι χωρίς αυτά τα αλλεργιογόνα και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ χρησιμοποιήστε μια καθαρή, φρεσκοπλυμένη σέσουλα παγωτού.",
+      restaurant:
+        "Ποια πιάτα είναι χωρίς αυτά τα αλλεργιογόνα και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ ετοιμάστε το φαγητό με καθαρά σκεύη και επιφάνειες.",
+      bakery:
+        "Ποια προϊόντα είναι χωρίς αυτά τα αλλεργιογόνα και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ χρησιμοποιήστε καθαρά σκεύη.",
+      general:
+        "Παρακαλώ βεβαιωθείτε ότι το φαγητό δεν περιέχει κανένα από αυτά τα αλλεργιογόνα και ότι παρασκευάζεται χωρίς κίνδυνο επιμόλυνσης.",
+    },
   },
   tr: {
-    icecream:
-      "Çocuğumun ciddi bir yer fıstığı alerjisi var. Hangi dondurma çeşitleri yer fıstığı içermez ve bulaşma riski taşımaz? Lütfen temiz, yeni yıkanmış bir dondurma kaşığı kullanın.",
-    restaurant:
-      "Çocuğumun ciddi bir yer fıstığı alerjisi var. Hangi yemekler yer fıstığı içermez ve bulaşma riski taşımaz? Lütfen yemeği temiz mutfak gereçleri ve yüzeylerle hazırlayın.",
-    bakery:
-      "Çocuğumun ciddi bir yer fıstığı alerjisi var. Hangi unlu mamuller yer fıstığı içermez ve bulaşma riski taşımaz? Lütfen temiz mutfak gereçleri kullanın.",
-    general:
-      "Çocuğumun ciddi bir yer fıstığı alerjisi var. Çok küçük bir miktar bile tehlikeli olabilir. Lütfen yemeğin yer fıstığı içermediğinden ve bulaşma riski olmadan hazırlandığından emin olun.",
+    lead: "Çocuğumun ciddi, hayatı tehdit eden bir alerjisi var. Çok küçük bir miktar bile tehlikeli olabilir. Aşağıdaki alerjenlerin hiçbirini tüketmemelidir: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Hangi dondurma çeşitleri bu alerjenleri içermez ve bulaşma riski taşımaz? Lütfen temiz, yeni yıkanmış bir dondurma kaşığı kullanın.",
+      restaurant:
+        "Hangi yemekler bu alerjenleri içermez ve bulaşma riski taşımaz? Lütfen yemeği temiz mutfak gereçleri ve yüzeylerle hazırlayın.",
+      bakery:
+        "Hangi unlu mamuller bu alerjenleri içermez ve bulaşma riski taşımaz? Lütfen temiz mutfak gereçleri kullanın.",
+      general:
+        "Lütfen yemeğin bu alerjenlerin hiçbirini içermediğinden ve bulaşma riski olmadan hazırlandığından emin olun.",
+    },
   },
   ru: {
-    icecream:
-      "У моего ребёнка тяжёлая аллергия на арахис. Какие сорта мороженого не содержат арахиса и не имеют риска перекрёстного загрязнения? Пожалуйста, используйте чистую, только что вымытую ложку для мороженого.",
-    restaurant:
-      "У моего ребёнка тяжёлая аллергия на арахис. Какие блюда не содержат арахиса и не имеют риска перекрёстного загрязнения? Пожалуйста, готовьте еду чистой посудой и на чистых поверхностях.",
-    bakery:
-      "У моего ребёнка тяжёлая аллергия на арахис. Какая выпечка не содержит арахиса и не имеет риска перекрёстного загрязнения? Пожалуйста, используйте чистые инструменты.",
-    general:
-      "У моего ребёнка тяжёлая аллергия на арахис. Даже очень небольшое количество может быть опасным. Пожалуйста, убедитесь, что еда не содержит арахиса и приготовлена без риска перекрёстного загрязнения.",
+    lead: "У моего ребёнка тяжёлая, опасная для жизни аллергия. Даже очень небольшое количество может быть опасным. Ему нельзя употреблять ни один из следующих аллергенов: {LIST}.",
+    sep: ", ",
+    venues: {
+      icecream:
+        "Какие сорта мороженого не содержат этих аллергенов и не имеют риска перекрёстного загрязнения? Пожалуйста, используйте чистую, только что вымытую ложку для мороженого.",
+      restaurant:
+        "Какие блюда не содержат этих аллергенов и не имеют риска перекрёстного загрязнения? Пожалуйста, готовьте еду чистой посудой и на чистых поверхностях.",
+      bakery:
+        "Какая выпечка не содержит этих аллергенов и не имеет риска перекрёстного загрязнения? Пожалуйста, используйте чистые инструменты.",
+      general:
+        "Пожалуйста, убедитесь, что еда не содержит ни одного из этих аллергенов и приготовлена без риска перекрёстного загрязнения.",
+    },
   },
   ar: {
-    icecream:
-      "طفلي يعاني من حساسية شديدة تجاه الفول السوداني. ما هي النكهات الخالية من الفول السوداني ومن أي خطر للتلوث؟ من فضلك استخدم ملعقة آيس كريم نظيفة ومغسولة حديثاً.",
-    restaurant:
-      "طفلي يعاني من حساسية شديدة تجاه الفول السوداني. ما هي الأطباق الخالية من الفول السوداني ومن أي خطر للتلوث؟ من فضلك حضّر الطعام بأدوات وأسطح نظيفة.",
-    bakery:
-      "طفلي يعاني من حساسية شديدة تجاه الفول السوداني. ما هي المخبوزات الخالية من الفول السوداني ومن أي خطر للتلوث؟ من فضلك استخدم أدوات نظيفة.",
-    general:
-      "طفلي يعاني من حساسية شديدة تجاه الفول السوداني. حتى الكمية الصغيرة جداً قد تكون خطيرة. من فضلك تأكد من أن الطعام لا يحتوي على الفول السوداني وأنه محضّر دون أي خطر للتلوث.",
+    lead: "طفلي يعاني من حساسية شديدة قد تهدد حياته. حتى الكمية الصغيرة جداً قد تكون خطيرة. يجب ألا يتناول أيًّا من المواد المسبّبة للحساسية التالية: {LIST}.",
+    sep: "، ",
+    venues: {
+      icecream:
+        "ما هي النكهات الخالية من هذه المواد المسبّبة للحساسية ومن أي خطر للتلوث؟ من فضلك استخدم ملعقة آيس كريم نظيفة ومغسولة حديثاً.",
+      restaurant:
+        "ما هي الأطباق الخالية من هذه المواد المسبّبة للحساسية ومن أي خطر للتلوث؟ من فضلك حضّر الطعام بأدوات وأسطح نظيفة.",
+      bakery:
+        "ما هي المخبوزات الخالية من هذه المواد المسبّبة للحساسية ومن أي خطر للتلوث؟ من فضلك استخدم أدوات نظيفة.",
+      general:
+        "من فضلك تأكد من أن الطعام لا يحتوي على أيٍّ من هذه المواد المسبّبة للحساسية وأنه محضّر دون أي خطر للتلوث.",
+    },
   },
   zh: {
-    icecream:
-      "我的孩子对花生有严重过敏。哪些口味不含花生，并且没有交叉污染的风险？请使用干净的、刚清洗过的冰淇淋勺。",
-    restaurant:
-      "我的孩子对花生有严重过敏。哪些菜品不含花生，并且没有交叉污染的风险？请使用干净的餐具和台面来准备食物。",
-    bakery:
-      "我的孩子对花生有严重过敏。哪些烘焙食品不含花生，并且没有交叉污染的风险？请使用干净的工具。",
-    general:
-      "我的孩子对花生有严重过敏。即使极少量也可能很危险。请确保食物不含花生，并且在没有交叉污染风险的情况下制作。",
+    lead: "我的孩子有严重的、可能危及生命的过敏。即使极少量也可能很危险。他/她绝对不能食用以下任何一种致敏物：{LIST}。",
+    sep: "、",
+    venues: {
+      icecream:
+        "哪些口味不含这些致敏物，并且没有交叉污染的风险？请使用干净的、刚清洗过的冰淇淋勺。",
+      restaurant:
+        "哪些菜品不含这些致敏物，并且没有交叉污染的风险？请使用干净的餐具和台面来准备食物。",
+      bakery:
+        "哪些烘焙食品不含这些致敏物，并且没有交叉污染的风险？请使用干净的工具。",
+      general:
+        "请确保食物不含任何这些致敏物，并且在没有交叉污染风险的情况下制作。",
+    },
   },
   ja: {
-    icecream:
-      "私の子どもはピーナッツ（落花生）に重度のアレルギーがあります。どのフレーバーがピーナッツ不使用で、混入の危険がありませんか？清潔な、洗ったばかりのアイスクリームスプーンを使ってください。",
-    restaurant:
-      "私の子どもはピーナッツ（落花生）に重度のアレルギーがあります。どの料理がピーナッツ不使用で、混入の危険がありませんか？清潔な調理器具と調理台で調理してください。",
-    bakery:
-      "私の子どもはピーナッツ（落花生）に重度のアレルギーがあります。どのパン・焼き菓子がピーナッツ不使用で、混入の危険がありませんか？清潔な器具を使ってください。",
-    general:
-      "私の子どもはピーナッツ（落花生）に重度のアレルギーがあります。ごく少量でも危険な場合があります。食べ物にピーナッツが含まれず、混入の危険なく調理されていることを確認してください。",
+    lead: "私の子どもには重度の、生命に関わるアレルギーがあります。ごく少量でも危険な場合があります。以下のアレルゲンを一切口にできません：{LIST}。",
+    sep: "、",
+    venues: {
+      icecream:
+        "どのフレーバーがこれらのアレルゲンを含まず、混入の危険がありませんか？清潔な、洗ったばかりのアイスクリームスプーンを使ってください。",
+      restaurant:
+        "どの料理がこれらのアレルゲンを含まず、混入の危険がありませんか？清潔な調理器具と調理台で調理してください。",
+      bakery:
+        "どのパン・焼き菓子がこれらのアレルゲンを含まず、混入の危険がありませんか？清潔な器具を使ってください。",
+      general:
+        "食べ物にこれらのアレルゲンが含まれず、混入の危険なく調理されていることを確認してください。",
+    },
   },
 };
 
-// English is guaranteed complete (covers every venue, enforced by the tests),
-// so it is a total fallback for any language/venue the picker can produce.
-const FALLBACK: Record<VenueKey, string> = PHRASES.en as Record<VenueKey, string>;
+/**
+ * Citation form of each allergen per language, in the form that reads naturally
+ * in a colon-separated list (e.g. "milk, eggs"). Keys are allergen keys from
+ * lib/allergens/profile.ts. Every language covers every allergen (enforced by
+ * the tests) so a selected allergen can never go untranslated.
+ *
+ * SAFETY-CRITICAL: a wrong or missing term here means staff are told the wrong
+ * allergen. Human review required before changing.
+ */
+export const ALLERGEN_TERMS: Record<string, Record<string, string>> = {
+  de: {
+    peanut: "Erdnüsse",
+    "tree-nuts": "Schalenfrüchte (Nüsse)",
+    soy: "Soja",
+    gluten: "Gluten (glutenhaltiges Getreide)",
+    milk: "Milch",
+    eggs: "Eier",
+    sesame: "Sesam",
+    fish: "Fisch",
+    crustaceans: "Krebstiere",
+    molluscs: "Weichtiere",
+    celery: "Sellerie",
+    mustard: "Senf",
+    lupin: "Lupinen",
+    sulphites: "Sulfite",
+  },
+  en: {
+    peanut: "peanuts",
+    "tree-nuts": "tree nuts",
+    soy: "soy",
+    gluten: "gluten (cereals containing gluten)",
+    milk: "milk",
+    eggs: "eggs",
+    sesame: "sesame",
+    fish: "fish",
+    crustaceans: "crustaceans",
+    molluscs: "molluscs",
+    celery: "celery",
+    mustard: "mustard",
+    lupin: "lupin",
+    sulphites: "sulphites",
+  },
+  it: {
+    peanut: "arachidi",
+    "tree-nuts": "frutta a guscio",
+    soy: "soia",
+    gluten: "glutine",
+    milk: "latte",
+    eggs: "uova",
+    sesame: "sesamo",
+    fish: "pesce",
+    crustaceans: "crostacei",
+    molluscs: "molluschi",
+    celery: "sedano",
+    mustard: "senape",
+    lupin: "lupini",
+    sulphites: "solfiti",
+  },
+  fr: {
+    peanut: "arachides (cacahuètes)",
+    "tree-nuts": "fruits à coque",
+    soy: "soja",
+    gluten: "gluten",
+    milk: "lait",
+    eggs: "œufs",
+    sesame: "sésame",
+    fish: "poisson",
+    crustaceans: "crustacés",
+    molluscs: "mollusques",
+    celery: "céleri",
+    mustard: "moutarde",
+    lupin: "lupin",
+    sulphites: "sulfites",
+  },
+  es: {
+    peanut: "cacahuetes (maní)",
+    "tree-nuts": "frutos de cáscara",
+    soy: "soja",
+    gluten: "gluten",
+    milk: "leche",
+    eggs: "huevos",
+    sesame: "sésamo",
+    fish: "pescado",
+    crustaceans: "crustáceos",
+    molluscs: "moluscos",
+    celery: "apio",
+    mustard: "mostaza",
+    lupin: "altramuces",
+    sulphites: "sulfitos",
+  },
+  pt: {
+    peanut: "amendoim",
+    "tree-nuts": "frutos de casca rija",
+    soy: "soja",
+    gluten: "glúten",
+    milk: "leite",
+    eggs: "ovos",
+    sesame: "sésamo",
+    fish: "peixe",
+    crustaceans: "crustáceos",
+    molluscs: "moluscos",
+    celery: "aipo",
+    mustard: "mostarda",
+    lupin: "tremoço",
+    sulphites: "sulfitos",
+  },
+  nl: {
+    peanut: "pinda's",
+    "tree-nuts": "noten",
+    soy: "soja",
+    gluten: "gluten",
+    milk: "melk",
+    eggs: "eieren",
+    sesame: "sesam",
+    fish: "vis",
+    crustaceans: "schaaldieren",
+    molluscs: "weekdieren",
+    celery: "selderij",
+    mustard: "mosterd",
+    lupin: "lupine",
+    sulphites: "sulfiet",
+  },
+  pl: {
+    peanut: "orzeszki ziemne",
+    "tree-nuts": "orzechy",
+    soy: "soja",
+    gluten: "gluten",
+    milk: "mleko",
+    eggs: "jaja",
+    sesame: "sezam",
+    fish: "ryby",
+    crustaceans: "skorupiaki",
+    molluscs: "mięczaki",
+    celery: "seler",
+    mustard: "gorczyca (musztarda)",
+    lupin: "łubin",
+    sulphites: "siarczyny",
+  },
+  cs: {
+    peanut: "arašídy",
+    "tree-nuts": "skořápkové plody (ořechy)",
+    soy: "sója",
+    gluten: "lepek",
+    milk: "mléko",
+    eggs: "vejce",
+    sesame: "sezam",
+    fish: "ryby",
+    crustaceans: "korýši",
+    molluscs: "měkkýši",
+    celery: "celer",
+    mustard: "hořčice",
+    lupin: "vlčí bob (lupina)",
+    sulphites: "siřičitany",
+  },
+  hr: {
+    peanut: "kikiriki",
+    "tree-nuts": "orašasti plodovi",
+    soy: "soja",
+    gluten: "gluten",
+    milk: "mlijeko",
+    eggs: "jaja",
+    sesame: "sezam",
+    fish: "riba",
+    crustaceans: "rakovi",
+    molluscs: "mekušci",
+    celery: "celer",
+    mustard: "gorušica (senf)",
+    lupin: "lupina",
+    sulphites: "sulfiti",
+  },
+  el: {
+    peanut: "αράπικα φιστίκια (αραχίδες)",
+    "tree-nuts": "ξηροί καρποί",
+    soy: "σόγια",
+    gluten: "γλουτένη",
+    milk: "γάλα",
+    eggs: "αυγά",
+    sesame: "σουσάμι",
+    fish: "ψάρι",
+    crustaceans: "καρκινοειδή",
+    molluscs: "μαλάκια",
+    celery: "σέλινο",
+    mustard: "μουστάρδα (σινάπι)",
+    lupin: "λούπινο",
+    sulphites: "θειώδη",
+  },
+  tr: {
+    peanut: "yer fıstığı",
+    "tree-nuts": "sert kabuklu yemişler",
+    soy: "soya",
+    gluten: "gluten",
+    milk: "süt",
+    eggs: "yumurta",
+    sesame: "susam",
+    fish: "balık",
+    crustaceans: "kabuklu deniz ürünleri",
+    molluscs: "yumuşakçalar",
+    celery: "kereviz",
+    mustard: "hardal",
+    lupin: "acı bakla",
+    sulphites: "sülfitler",
+  },
+  ru: {
+    peanut: "арахис",
+    "tree-nuts": "орехи",
+    soy: "соя",
+    gluten: "глютен",
+    milk: "молоко",
+    eggs: "яйца",
+    sesame: "кунжут",
+    fish: "рыба",
+    crustaceans: "ракообразные",
+    molluscs: "моллюски",
+    celery: "сельдерей",
+    mustard: "горчица",
+    lupin: "люпин",
+    sulphites: "сульфиты",
+  },
+  ar: {
+    peanut: "الفول السوداني",
+    "tree-nuts": "المكسرات",
+    soy: "الصويا",
+    gluten: "الغلوتين",
+    milk: "الحليب",
+    eggs: "البيض",
+    sesame: "السمسم",
+    fish: "السمك",
+    crustaceans: "القشريات",
+    molluscs: "الرخويات",
+    celery: "الكرفس",
+    mustard: "الخردل",
+    lupin: "الترمس",
+    sulphites: "الكبريتيت",
+  },
+  zh: {
+    peanut: "花生",
+    "tree-nuts": "坚果",
+    soy: "大豆",
+    gluten: "麸质（含麸质谷物）",
+    milk: "牛奶",
+    eggs: "鸡蛋",
+    sesame: "芝麻",
+    fish: "鱼",
+    crustaceans: "甲壳类",
+    molluscs: "软体动物",
+    celery: "芹菜",
+    mustard: "芥末",
+    lupin: "羽扇豆",
+    sulphites: "亚硫酸盐",
+  },
+  ja: {
+    peanut: "ピーナッツ（落花生）",
+    "tree-nuts": "ナッツ類（木の実）",
+    soy: "大豆",
+    gluten: "グルテン（小麦など）",
+    milk: "乳（牛乳）",
+    eggs: "卵",
+    sesame: "ごま",
+    fish: "魚",
+    crustaceans: "甲殻類（えび・かに）",
+    molluscs: "軟体動物（貝類・いか・たこ）",
+    celery: "セロリ",
+    mustard: "マスタード（からし）",
+    lupin: "ルピナス",
+    sulphites: "亜硫酸塩",
+  },
+};
 
-/** The phrase for a language/venue, falling back to English. */
-export function phraseFor(code: string, venue: VenueKey): string {
-  return PHRASES[code]?.[venue] ?? FALLBACK[venue];
+// English is guaranteed complete (every venue + every allergen, enforced by
+// the tests), so it is the total fallback. The non-null assertions are safe:
+// the "en" entries are defined literally above.
+const FALLBACK: LangPhrase = LANG_PHRASES.en!;
+const FALLBACK_TERMS: Record<string, string> = ALLERGEN_TERMS.en!;
+
+/** The phrasing block for a language code, falling back to English. */
+function langPhrase(code: string): LangPhrase {
+  return LANG_PHRASES[code] ?? FALLBACK;
+}
+
+/** The translated term for an allergen key, falling back to English then key. */
+export function allergenTerm(code: string, key: string): string {
+  return ALLERGEN_TERMS[code]?.[key] ?? FALLBACK_TERMS[key] ?? key;
+}
+
+/**
+ * Keep only allergen keys the app actually knows about, in the given order. If
+ * nothing valid remains, fall back to peanut — mirroring the scan engine, which
+ * checks peanut when no allergen is selected (see usePrefs / ResultScreen).
+ */
+function effectiveKeys(allergenKeys: readonly string[]): string[] {
+  const known = allergenKeys.filter((k) => getProfile(k));
+  return known.length ? known : ["peanut"];
+}
+
+/** The joined, comma-separated allergen list for a language. */
+export function allergenList(code: string, allergenKeys: readonly string[]): string {
+  const { sep } = langPhrase(code);
+  return effectiveKeys(allergenKeys)
+    .map((k) => allergenTerm(code, k))
+    .join(sep);
+}
+
+/**
+ * The full card text for a language/venue/allergen selection, falling back to
+ * English for unknown languages. The lead names the selected allergens; the
+ * venue sentence asks which items are safe.
+ */
+export function phraseFor(
+  code: string,
+  venue: VenueKey,
+  allergenKeys: readonly string[] = [],
+): string {
+  const lp = langPhrase(code);
+  const list = allergenList(code, allergenKeys);
+  const lead = lp.lead.replace("{LIST}", list);
+  return `${lead} ${lp.venues[venue]}`;
 }
 
 /** The language metadata for a code, falling back to English. */
@@ -251,3 +651,6 @@ export function defaultLangCode(preferred: readonly string[] = []): string {
   }
   return "en";
 }
+
+/** Re-exported for tests: the canonical allergen keys the card must cover. */
+export { ALLERGEN_KEYS };
