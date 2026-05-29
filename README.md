@@ -41,6 +41,19 @@ Onboarding → Scan → Ergebnis → Verlauf → Profil mit unterer Tab-Navigati
 Das Ergebnis ist der ganze Screen (Stempel, Belegstelle mit markierter
 „Erdnüsse", Allergen-Chips).
 
+## Allergie-Karte (mehrsprachig)
+
+Hinter dem Button **„Allergie-Karte zeigen"** (Scan-Screen) liegt eine Karte zum
+Vorzeigen vor Ort: ein vorformulierter Satz, der die schwere Erdnussallergie
+erklärt und um erdnussfreie Auswahl ohne Verunreinigung bittet. Auswählbar nach
+Ort (Eisdiele, Restaurant, Bäckerei & Café, Allgemein) und Sprache (16 gängige
+Reise-/Weltsprachen, inkl. RTL für Arabisch). Die Startsprache richtet sich nach
+der Gerätesprache; „Groß anzeigen" zeigt den Satz bildschirmfüllend.
+
+Texte liegen in `lib/phrases.ts`; `lib/phrases.test.ts` stellt sicher, dass jede
+gelistete Sprache jeden Ort abdeckt (keine stillen Lücken). Übersetzungen sind
+eine Hilfe, keine Garantie.
+
 ## Verlauf & Einstellungen (lokal, ohne Konto)
 
 Scan-Verlauf und Einstellungen (Akzentfarbe, Vibrieren/Ton bei Treffer,

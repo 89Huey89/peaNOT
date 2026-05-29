@@ -11,7 +11,7 @@ import ManualEntry from "@/components/ManualEntry";
 import ProductSearch from "@/components/ProductSearch";
 import { verdictGlyph } from "@/lib/verdict";
 import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { Keyboard, Search } from "lucide-react";
+import { Keyboard, Languages, Search } from "lucide-react";
 
 const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
   ssr: false,
@@ -35,6 +35,7 @@ export default function ScanScreen({
   history,
   onDetected,
   onOpen,
+  onOpenCard,
   onTab,
 }: {
   P: Palette;
@@ -45,6 +46,7 @@ export default function ScanScreen({
   history: HistoryEntry[];
   onDetected: (barcode: string) => void;
   onOpen: (entry: HistoryEntry) => void;
+  onOpenCard: () => void;
   onTab: (t: Tab) => void;
 }) {
   const [manualOpen, setManualOpen] = useState(false);
@@ -169,6 +171,26 @@ export default function ScanScreen({
             <ProductSearch P={P} onSelect={onDetected} disabled={loading} />
           </div>
         ) : null}
+
+        <button
+          type="button"
+          className="tap"
+          onClick={onOpenCard}
+          style={{
+            width: "100%",
+            marginTop: 10,
+            background: "transparent",
+            color: P.INK,
+            border: `1.5px solid ${P.INK}33`,
+            borderRadius: 99,
+            padding: "11px 14px",
+            fontWeight: 600,
+            fontSize: 13.5,
+            fontFamily: "inherit",
+          }}
+        >
+          <Languages size={15} aria-hidden="true" /> &nbsp;Allergie-Karte zeigen
+        </button>
 
         {history.length > 0 ? (
           <div style={{ marginTop: 22 }}>
