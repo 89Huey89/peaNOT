@@ -33,9 +33,12 @@ const VENUE_ICON: Record<VenueKey, ReactNode> = {
 
 export default function PhraseScreen({
   P,
+  selectedAllergens,
   onBack,
 }: {
   P: Palette;
+  /** Allergen keys the user scans for; the card names exactly these. */
+  selectedAllergens: string[];
   onBack: () => void;
 }) {
   const [venue, setVenue] = useState<VenueKey>("icecream");
@@ -47,8 +50,8 @@ export default function PhraseScreen({
   const [present, setPresent] = useState(false);
 
   const lang = useMemo(() => langFor(code), [code]);
-  const text = phraseFor(code, venue);
-  const germanText = phraseFor("de", venue);
+  const text = phraseFor(code, venue, selectedAllergens);
+  const germanText = phraseFor("de", venue, selectedAllergens);
 
   return (
     <AppShell P={P}>
@@ -86,8 +89,9 @@ export default function PhraseScreen({
       <div className="scroll" style={{ flex: 1, overflowY: "auto", padding: "4px 22px 28px" }}>
         <SectionTitle>Allergie-Karte</SectionTitle>
         <p style={{ margin: "0 0 16px", fontSize: 13.5, opacity: 0.7, lineHeight: 1.5 }}>
-          Zeig diese Karte dem Personal. Sie erklärt die Erdnussallergie und
-          bittet um erdnussfreie Auswahl ohne Verunreinigung.
+          Zeig diese Karte dem Personal. Sie nennt die in deinem Profil
+          gewählten Allergene und bittet um eine sichere Auswahl ohne
+          Verunreinigung.
         </p>
 
         <Mono style={{ opacity: 0.55, marginBottom: 8, display: "block" }}>Wo?</Mono>

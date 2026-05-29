@@ -99,7 +99,13 @@ export default function Home() {
       />
     );
   } else if (route === "karte") {
-    screen = <PhraseScreen P={P} onBack={() => setRoute("scan")} />;
+    screen = (
+      <PhraseScreen
+        P={P}
+        selectedAllergens={prefs.selectedAllergens}
+        onBack={() => setRoute("scan")}
+      />
+    );
   } else if (route === "profil") {
     screen = (
       <ProfileScreen
