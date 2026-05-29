@@ -16,7 +16,9 @@
  *      placeholder `{LIST}` — a colon list takes citation forms, so no
  *      declension is needed;
  *   2. the joined allergen TERMS (one citation form per allergen per language);
- *   3. a VENUE sentence asking which items are safe + a clean-tools request.
+ *   3. a VENUE sentence asking which items are safe + a venue-specific
+ *      cross-contamination request (clean/fresh tools and serving area at a
+ *      counter; a question about shared fryer/grill/utensils at a restaurant).
  * Every language must cover every venue and every allergen (enforced by
  * lib/phrases.test.ts) so a picked language/allergen can never fall to silence.
  */
@@ -80,7 +82,7 @@ interface LangPhrase {
   lead: string;
   /** Separator between allergen terms in the list (locale-appropriate comma). */
   sep: string;
-  /** Venue question + clean-tools request, referring back to "these allergens". */
+  /** Venue question + cross-contamination request, referring back to "these allergens". */
   venues: Record<VenueKey, string>;
 }
 
@@ -88,6 +90,16 @@ interface LangPhrase {
  * Per-language phrasing. The venue sentences mirror the previously reviewed
  * peanut wording, with the allergen-specific clause generalised to
  * "these allergens" (the concrete list lives in the lead).
+ *
+ * The cross-contamination request is tailored per venue: at a counter (ice
+ * cream, bakery) it asks for clean/fresh tools and serving from an untouched
+ * area; at a restaurant it asks the kitchen to flag shared fryer/grill/utensils
+ * — the actual contamination vectors there — instead of issuing a generic
+ * "use clean tools" instruction a professional kitchen already follows.
+ *
+ * SAFETY-CRITICAL / TRANSLATION STATUS: the restaurant and ice-cream venue
+ * sentences below were revised in bulk and are NOT yet human-reviewed by native
+ * speakers. They must be verified before being relied on.
  */
 export const LANG_PHRASES: Record<string, LangPhrase> = {
   de: {
@@ -95,9 +107,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Welche Eissorten sind frei von diesen Allergenen und ohne Risiko einer Verunreinigung? Bitte verwenden Sie einen sauberen, frisch abgewaschenen Portionierer.",
+        "Welche Eissorten sind frei von diesen Allergenen und ohne Risiko einer Verunreinigung? Bitte verwenden Sie einen sauberen, frisch abgewaschenen Portionierer und entnehmen Sie das Eis aus einem unberührten Bereich der Eiswanne.",
       restaurant:
-        "Welche Gerichte sind frei von diesen Allergenen und ohne Risiko einer Verunreinigung? Bitte bereiten Sie das Essen mit sauberem Geschirr und sauberen Arbeitsflächen zu.",
+        "Welche Gerichte sind frei von diesen Allergenen und ohne Risiko einer Verunreinigung? Bitte sagen Sie mir, ob das Gericht mit einer Fritteuse, einem Grill oder Geräten zubereitet wird, die auch für diese Allergene verwendet werden.",
       bakery:
         "Welche Backwaren sind frei von diesen Allergenen und ohne Risiko einer Verunreinigung? Bitte verwenden Sie sauberes Werkzeug.",
       general:
@@ -109,9 +121,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Which flavours are free from these allergens and free from any risk of cross-contamination? Please use a clean, freshly washed scoop.",
+        "Which flavours are free from these allergens and free from any risk of cross-contamination? Please use a clean, freshly washed scoop and serve from an untouched part of the tub.",
       restaurant:
-        "Which dishes are free from these allergens and free from any risk of cross-contamination? Please prepare the meal with clean utensils and surfaces.",
+        "Which dishes are free from these allergens and free from any risk of cross-contamination? Please tell me if the dish is prepared using a fryer, grill or utensils shared with these allergens.",
       bakery:
         "Which baked goods are free from these allergens and free from any risk of cross-contamination? Please use clean utensils.",
       general:
@@ -123,9 +135,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Quali gusti sono senza questi allergeni e senza rischio di contaminazione? Per favore, usi una paletta pulita e appena lavata.",
+        "Quali gusti sono senza questi allergeni e senza rischio di contaminazione? Per favore, usi una paletta pulita e appena lavata e prenda il gelato da una parte non ancora toccata della vaschetta.",
       restaurant:
-        "Quali piatti sono senza questi allergeni e senza rischio di contaminazione? Per favore, prepari il pasto con utensili e superfici puliti.",
+        "Quali piatti sono senza questi allergeni e senza rischio di contaminazione? Per favore, mi avvisi se il piatto viene preparato con friggitrice, griglia o utensili usati anche per questi allergeni.",
       bakery:
         "Quali prodotti da forno sono senza questi allergeni e senza rischio di contaminazione? Per favore, usi utensili puliti.",
       general:
@@ -137,9 +149,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Quels parfums sont sans ces allergènes et sans risque de contamination ? Merci d'utiliser une cuillère à glace propre et fraîchement lavée.",
+        "Quels parfums sont sans ces allergènes et sans risque de contamination ? Merci d'utiliser une cuillère à glace propre et fraîchement lavée et de prélever la glace dans une partie intacte du bac.",
       restaurant:
-        "Quels plats sont sans ces allergènes et sans risque de contamination ? Merci de préparer le repas avec des ustensiles et des surfaces propres.",
+        "Quels plats sont sans ces allergènes et sans risque de contamination ? Merci de me dire si le plat est préparé avec une friteuse, un grill ou des ustensiles également utilisés pour ces allergènes.",
       bakery:
         "Quels produits sont sans ces allergènes et sans risque de contamination ? Merci d'utiliser des ustensiles propres.",
       general:
@@ -151,9 +163,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "¿Qué sabores no contienen estos alérgenos y no tienen riesgo de contaminación? Por favor, use una cuchara de helado limpia y recién lavada.",
+        "¿Qué sabores no contienen estos alérgenos y no tienen riesgo de contaminación? Por favor, use una cuchara de helado limpia y recién lavada y sirva el helado de una parte intacta de la cubeta.",
       restaurant:
-        "¿Qué platos no contienen estos alérgenos y no tienen riesgo de contaminación? Por favor, prepare la comida con utensilios y superficies limpios.",
+        "¿Qué platos no contienen estos alérgenos y no tienen riesgo de contaminación? Por favor, dígame si el plato se prepara con una freidora, una parrilla o utensilios que también se usan para estos alérgenos.",
       bakery:
         "¿Qué productos no contienen estos alérgenos y no tienen riesgo de contaminación? Por favor, use utensilios limpios.",
       general:
@@ -165,9 +177,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Quais sabores não contêm estes alérgenos e não têm risco de contaminação? Por favor, use uma colher de gelado limpa e acabada de lavar.",
+        "Quais sabores não contêm estes alérgenos e não têm risco de contaminação? Por favor, use uma colher de gelado limpa e acabada de lavar e retire o gelado de uma parte intacta da cuba.",
       restaurant:
-        "Quais pratos não contêm estes alérgenos e não têm risco de contaminação? Por favor, prepare a refeição com utensílios e superfícies limpos.",
+        "Quais pratos não contêm estes alérgenos e não têm risco de contaminação? Por favor, diga-me se o prato é preparado com fritadeira, grelha ou utensílios também usados para estes alérgenos.",
       bakery:
         "Quais produtos não contêm estes alérgenos e não têm risco de contaminação? Por favor, use utensílios limpos.",
       general:
@@ -179,9 +191,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Welke smaken zijn vrij van deze allergenen en zonder risico op kruisbesmetting? Gebruik alstublieft een schone, net gewassen ijslepel.",
+        "Welke smaken zijn vrij van deze allergenen en zonder risico op kruisbesmetting? Gebruik alstublieft een schone, net gewassen ijslepel en schep het ijs uit een onaangeroerd deel van de bak.",
       restaurant:
-        "Welke gerechten zijn vrij van deze allergenen en zonder risico op kruisbesmetting? Bereid de maaltijd alstublieft met schoon gereedschap en schone oppervlakken.",
+        "Welke gerechten zijn vrij van deze allergenen en zonder risico op kruisbesmetting? Vertel me alstublieft of het gerecht wordt bereid met een friteuse, grill of keukengerei die ook voor deze allergenen worden gebruikt.",
       bakery:
         "Welke gebakken producten zijn vrij van deze allergenen en zonder risico op kruisbesmetting? Gebruik alstublieft schoon gereedschap.",
       general:
@@ -193,9 +205,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Które smaki są wolne od tych alergenów i bez ryzyka zanieczyszczenia? Proszę użyć czystej, świeżo umytej łyżki do lodów.",
+        "Które smaki są wolne od tych alergenów i bez ryzyka zanieczyszczenia? Proszę użyć czystej, świeżo umytej łyżki do lodów i nabrać lody z nienaruszonej części pojemnika.",
       restaurant:
-        "Które dania są wolne od tych alergenów i bez ryzyka zanieczyszczenia? Proszę przygotować posiłek czystymi narzędziami i na czystych powierzchniach.",
+        "Które dania są wolne od tych alergenów i bez ryzyka zanieczyszczenia? Proszę mi powiedzieć, czy danie jest przygotowywane we frytownicy, na grillu lub przy użyciu naczyń używanych również do tych alergenów.",
       bakery:
         "Które wypieki są wolne od tych alergenów i bez ryzyka zanieczyszczenia? Proszę użyć czystych narzędzi.",
       general:
@@ -207,9 +219,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Které příchutě jsou bez těchto alergenů a bez rizika kontaminace? Použijte prosím čistou, čerstvě umytou lžíci na zmrzlinu.",
+        "Které příchutě jsou bez těchto alergenů a bez rizika kontaminace? Použijte prosím čistou, čerstvě umytou lžíci na zmrzlinu a naberte zmrzlinu z nedotčené části vaničky.",
       restaurant:
-        "Která jídla jsou bez těchto alergenů a bez rizika kontaminace? Připravte prosím jídlo čistým náčiním a na čistých plochách.",
+        "Která jídla jsou bez těchto alergenů a bez rizika kontaminace? Řekněte mi prosím, zda se jídlo připravuje ve fritéze, na grilu nebo s náčiním, které se používá i pro tyto alergeny.",
       bakery:
         "Které pečivo je bez těchto alergenů a bez rizika kontaminace? Použijte prosím čisté náčiní.",
       general:
@@ -221,9 +233,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Koji su okusi bez ovih alergena i bez rizika od kontaminacije? Molim vas, upotrijebite čistu, svježe opranu žlicu za sladoled.",
+        "Koji su okusi bez ovih alergena i bez rizika od kontaminacije? Molim vas, upotrijebite čistu, svježe opranu žlicu za sladoled i uzmite sladoled iz nedirnutog dijela posude.",
       restaurant:
-        "Koja su jela bez ovih alergena i bez rizika od kontaminacije? Molim vas, pripremite obrok čistim priborom i na čistim površinama.",
+        "Koja su jela bez ovih alergena i bez rizika od kontaminacije? Molim vas, recite mi priprema li se jelo u fritezi, na roštilju ili priborom koji se koristi i za ove alergene.",
       bakery:
         "Koji su pekarski proizvodi bez ovih alergena i bez rizika od kontaminacije? Molim vas, upotrijebite čisti pribor.",
       general:
@@ -235,9 +247,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Ποιες γεύσεις είναι χωρίς αυτά τα αλλεργιογόνα και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ χρησιμοποιήστε μια καθαρή, φρεσκοπλυμένη σέσουλα παγωτού.",
+        "Ποιες γεύσεις είναι χωρίς αυτά τα αλλεργιογόνα και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ χρησιμοποιήστε μια καθαρή, φρεσκοπλυμένη σέσουλα παγωτού και πάρτε το παγωτό από ένα ανέγγιχτο σημείο του δοχείου.",
       restaurant:
-        "Ποια πιάτα είναι χωρίς αυτά τα αλλεργιογόνα και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ ετοιμάστε το φαγητό με καθαρά σκεύη και επιφάνειες.",
+        "Ποια πιάτα είναι χωρίς αυτά τα αλλεργιογόνα και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ πείτε μου αν το πιάτο παρασκευάζεται με φριτέζα, γκριλ ή σκεύη που χρησιμοποιούνται και για αυτά τα αλλεργιογόνα.",
       bakery:
         "Ποια προϊόντα είναι χωρίς αυτά τα αλλεργιογόνα και χωρίς κίνδυνο επιμόλυνσης; Παρακαλώ χρησιμοποιήστε καθαρά σκεύη.",
       general:
@@ -249,9 +261,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Hangi dondurma çeşitleri bu alerjenleri içermez ve bulaşma riski taşımaz? Lütfen temiz, yeni yıkanmış bir dondurma kaşığı kullanın.",
+        "Hangi dondurma çeşitleri bu alerjenleri içermez ve bulaşma riski taşımaz? Lütfen temiz, yeni yıkanmış bir dondurma kaşığı kullanın ve dondurmayı kabın dokunulmamış bir bölümünden alın.",
       restaurant:
-        "Hangi yemekler bu alerjenleri içermez ve bulaşma riski taşımaz? Lütfen yemeği temiz mutfak gereçleri ve yüzeylerle hazırlayın.",
+        "Hangi yemekler bu alerjenleri içermez ve bulaşma riski taşımaz? Lütfen yemeğin, bu alerjenler için de kullanılan bir fritöz, ızgara veya mutfak gereçleriyle hazırlanıp hazırlanmadığını söyleyin.",
       bakery:
         "Hangi unlu mamuller bu alerjenleri içermez ve bulaşma riski taşımaz? Lütfen temiz mutfak gereçleri kullanın.",
       general:
@@ -263,9 +275,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: ", ",
     venues: {
       icecream:
-        "Какие сорта мороженого не содержат этих аллергенов и не имеют риска перекрёстного загрязнения? Пожалуйста, используйте чистую, только что вымытую ложку для мороженого.",
+        "Какие сорта мороженого не содержат этих аллергенов и не имеют риска перекрёстного загрязнения? Пожалуйста, используйте чистую, только что вымытую ложку для мороженого и набирайте мороженое из нетронутой части контейнера.",
       restaurant:
-        "Какие блюда не содержат этих аллергенов и не имеют риска перекрёстного загрязнения? Пожалуйста, готовьте еду чистой посудой и на чистых поверхностях.",
+        "Какие блюда не содержат этих аллергенов и не имеют риска перекрёстного загрязнения? Пожалуйста, сообщите мне, готовится ли блюдо во фритюрнице, на гриле или с использованием посуды, которая также используется для этих аллергенов.",
       bakery:
         "Какая выпечка не содержит этих аллергенов и не имеет риска перекрёстного загрязнения? Пожалуйста, используйте чистые инструменты.",
       general:
@@ -277,9 +289,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: "، ",
     venues: {
       icecream:
-        "ما هي النكهات الخالية من هذه المواد المسبّبة للحساسية ومن أي خطر للتلوث؟ من فضلك استخدم ملعقة آيس كريم نظيفة ومغسولة حديثاً.",
+        "ما هي النكهات الخالية من هذه المواد المسبّبة للحساسية ومن أي خطر للتلوث؟ من فضلك استخدم ملعقة آيس كريم نظيفة ومغسولة حديثاً وخذ الآيس كريم من جزء لم يُلمس من العلبة.",
       restaurant:
-        "ما هي الأطباق الخالية من هذه المواد المسبّبة للحساسية ومن أي خطر للتلوث؟ من فضلك حضّر الطعام بأدوات وأسطح نظيفة.",
+        "ما هي الأطباق الخالية من هذه المواد المسبّبة للحساسية ومن أي خطر للتلوث؟ من فضلك أخبرني إذا كان الطبق يُحضَّر باستخدام مقلاة أو شواية أو أدوات تُستخدم أيضاً مع هذه المواد المسبّبة للحساسية.",
       bakery:
         "ما هي المخبوزات الخالية من هذه المواد المسبّبة للحساسية ومن أي خطر للتلوث؟ من فضلك استخدم أدوات نظيفة.",
       general:
@@ -291,9 +303,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: "、",
     venues: {
       icecream:
-        "哪些口味不含这些致敏物，并且没有交叉污染的风险？请使用干净的、刚清洗过的冰淇淋勺。",
+        "哪些口味不含这些致敏物，并且没有交叉污染的风险？请使用干净的、刚清洗过的冰淇淋勺，并从未被取用过的部分挖取冰淇淋。",
       restaurant:
-        "哪些菜品不含这些致敏物，并且没有交叉污染的风险？请使用干净的餐具和台面来准备食物。",
+        "哪些菜品不含这些致敏物，并且没有交叉污染的风险？请告诉我这道菜是否使用了也用于这些致敏物的油炸锅、烤架或餐具来准备。",
       bakery:
         "哪些烘焙食品不含这些致敏物，并且没有交叉污染的风险？请使用干净的工具。",
       general:
@@ -305,9 +317,9 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
     sep: "、",
     venues: {
       icecream:
-        "どのフレーバーがこれらのアレルゲンを含まず、混入の危険がありませんか？清潔な、洗ったばかりのアイスクリームスプーンを使ってください。",
+        "どのフレーバーがこれらのアレルゲンを含まず、混入の危険がありませんか？清潔な、洗ったばかりのアイスクリームスプーンを使い、まだ手をつけていない部分からアイスクリームをすくってください。",
       restaurant:
-        "どの料理がこれらのアレルゲンを含まず、混入の危険がありませんか？清潔な調理器具と調理台で調理してください。",
+        "どの料理がこれらのアレルゲンを含まず、混入の危険がありませんか？この料理が、これらのアレルゲンにも使われるフライヤー、グリル、または調理器具で作られているかどうか教えてください。",
       bakery:
         "どのパン・焼き菓子がこれらのアレルゲンを含まず、混入の危険がありませんか？清潔な器具を使ってください。",
       general:
