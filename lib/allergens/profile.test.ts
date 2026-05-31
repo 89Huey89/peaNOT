@@ -9,10 +9,44 @@ import {
 } from "@/lib/allergens/profile";
 import { normalizeText } from "@/lib/text";
 
+// The 14 EU major allergen groups, plus the individual tree nuts broken out of
+// the "tree-nuts" group so a user can pick the specific nut they react to.
+const EU_ALLERGEN_KEYS = [
+  "peanut",
+  "tree-nuts",
+  "soy",
+  "gluten",
+  "milk",
+  "eggs",
+  "sesame",
+  "fish",
+  "crustaceans",
+  "molluscs",
+  "celery",
+  "mustard",
+  "lupin",
+  "sulphites",
+];
+const INDIVIDUAL_NUT_KEYS = [
+  "hazelnut",
+  "almond",
+  "walnut",
+  "cashew",
+  "pistachio",
+  "pecan",
+  "brazilnut",
+  "macadamia",
+];
+
 describe("allergen registry", () => {
-  it("covers the 14 EU major allergens with unique keys", () => {
-    expect(ALLERGEN_KEYS).toHaveLength(14);
-    expect(new Set(ALLERGEN_KEYS).size).toBe(14);
+  it("covers the 14 EU groups plus the individual tree nuts, with unique keys", () => {
+    for (const key of [...EU_ALLERGEN_KEYS, ...INDIVIDUAL_NUT_KEYS]) {
+      expect(ALLERGEN_KEYS).toContain(key);
+    }
+    expect(ALLERGEN_KEYS).toHaveLength(
+      EU_ALLERGEN_KEYS.length + INDIVIDUAL_NUT_KEYS.length,
+    );
+    expect(new Set(ALLERGEN_KEYS).size).toBe(ALLERGEN_KEYS.length);
   });
 
   it("keeps peanut as the back-compat default profile", () => {
