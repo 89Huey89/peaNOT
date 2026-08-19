@@ -82,6 +82,31 @@ describe("ResultScreen pack comparison", () => {
     expect(readPackMatch("20137946")).toBeNull();
   });
 
+  it("offers to complete a record that carries no traces data", () => {
+    renderResult({
+      ...CLEAN_RESULT,
+      barcode: "4011200296908",
+      caveats: ["traces-unknown"],
+    });
+
+    const link = screen.getByRole("link", { name: /Spurenangabe .* ergänzen/ });
+    expect(link).toHaveAttribute("href", "https://world.openfoodfacts.org/product/4011200296908");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("links to the record when the user reports a different pack", () => {
+    renderResult();
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Nein, andere" }));
+
+    expect(screen.getByRole("link", { name: /Eintrag .* prüfen/ })).toHaveAttribute(
+      "href",
+      "https://world.openfoodfacts.org/product/20137946",
+    );
+  });
+
   it("picks up an answer remembered from an earlier scan", () => {
     window.localStorage.setItem(
       "peanot.packmatch.v1",

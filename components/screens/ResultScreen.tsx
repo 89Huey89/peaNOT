@@ -6,11 +6,12 @@ import type { ProductResult } from "@/lib/types";
 import { resolveVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/verdict";
 import { CAVEATS, hasIdentityCaveat } from "@/lib/caveats";
 import { applyPackMatch } from "@/lib/packmatch";
+import { offProductUrl } from "@/lib/off/link";
 import { usePackMatch } from "@/components/usePackMatch";
 import { getProfiles } from "@/lib/allergens/profile";
 import { beep, vibrate } from "@/lib/feedback";
 import { AppShell, Chip, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
-import { ArrowRight, RotateCcw, X } from "lucide-react";
+import { ArrowRight, ExternalLink, RotateCcw, X } from "lucide-react";
 
 function shortEan(ean: string): string {
   return ean.length > 8 ? `${ean.slice(0, 4)}…${ean.slice(-4)}` : ean;
@@ -26,6 +27,36 @@ function formatDataDate(timestamp: number): string {
     month: "2-digit",
     year: "numeric",
   }).format(new Date(timestamp * 1000));
+}
+
+/**
+ * Link into the Open Food Facts record. Shown wherever peaNOT tells the user
+ * its data may be wrong or incomplete: the fix belongs in the database, where
+ * it helps the next person scanning the same code.
+ */
+function OffRecordLink({ barcode, label, P }: { barcode: string; label: string; P: Palette }) {
+  return (
+    <a
+      href={offProductUrl(barcode)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="tap"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 8,
+        color: P.INK,
+        fontSize: 12.5,
+        fontWeight: 600,
+        textDecoration: "underline",
+        textUnderlineOffset: 3,
+      }}
+    >
+      {label}
+      <ExternalLink size={13} aria-hidden="true" />
+    </a>
+  );
 }
 
 function highlight(text: string, found: string | null | undefined, P: Palette): ReactNode {
@@ -453,6 +484,15 @@ export default function ResultScreen({
                   ? "Du hast angegeben, dass der Eintrag nicht zu deinem Produkt gehört. Damit ist das Ergebnis hinfällig — es zählt die Zutatenliste auf der Verpackung."
                   : "Du hast den Eintrag deiner Packung zugeordnet. Beim nächsten Scan dieses Codes gilt die Antwort weiter."}
               </div>
+              {mismatch ? (
+                <div>
+                  <OffRecordLink
+                    barcode={result.barcode}
+                    label="Eintrag bei Open Food Facts prüfen"
+                    P={P}
+                  />
+                </div>
+              ) : null}
               <button
                 type="button"
                 className="tap"
@@ -493,6 +533,13 @@ export default function ResultScreen({
                   </div>
                 </div>
               ))}
+              {resolved.caveats.includes("traces-unknown") ? (
+                <OffRecordLink
+                  barcode={result.barcode}
+                  label="Spurenangabe bei Open Food Facts ergänzen"
+                  P={P}
+                />
+              ) : null}
             </div>
           ) : null}
 

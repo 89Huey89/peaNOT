@@ -60,6 +60,11 @@ Verlauf. Gefragt wird nur bei Identitäts-Vorbehalt, damit die Frage nicht zur
 Reflex-Bestätigung verkommt. Auch hier gilt fail-safe: eine Antwort kann ein
 `JA`/`SPUREN` niemals entkräften.
 
+Wo peaNOT sagt, dass seine Daten falsch oder unvollständig sind, verlinkt es den
+Eintrag bei Open Food Facts (`lib/off/link.ts`) — bei gemeldeter Abweichung zum
+Prüfen, bei fehlender Spurenangabe zum Ergänzen. Korrekturen landen so dort, wo
+sie dem nächsten Menschen mit demselben Code helfen.
+
 ## Entwicklung
 
 ```bash
