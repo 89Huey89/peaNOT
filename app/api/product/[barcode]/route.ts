@@ -5,6 +5,7 @@ import { fetchOffProduct } from "@/lib/off/client";
 import { detectAllergens } from "@/lib/allergens/combine";
 import { getProfiles, type AllergenProfile } from "@/lib/allergens/profile";
 import { allergenLabels } from "@/lib/allergens/labels";
+import { detectCaveats } from "@/lib/caveats";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,6 +71,7 @@ export async function GET(
         imageUrl: outcome.imageUrl || null,
         dataLastModified: outcome.dataLastModified,
         dataRevision: outcome.dataRevision,
+        caveats: detectCaveats(barcode, detection.overall, outcome.fields),
       };
       break;
     }
@@ -83,6 +85,7 @@ export async function GET(
         imageUrl: outcome.imageUrl || null,
         dataLastModified: outcome.dataLastModified,
         dataRevision: outcome.dataRevision,
+        caveats: detectCaveats(barcode, "KEINE_DATEN", null),
       };
       break;
     case "not-found":
@@ -92,6 +95,7 @@ export async function GET(
         brand: null,
         status: "KEINE_DATEN",
         message: keineDatenMessage("not-found", profiles),
+        caveats: detectCaveats(barcode, "KEINE_DATEN", null),
       };
       break;
     case "error":
@@ -101,6 +105,7 @@ export async function GET(
         brand: null,
         status: "KEINE_DATEN",
         message: keineDatenMessage("error", profiles),
+        caveats: detectCaveats(barcode, "KEINE_DATEN", null),
       };
       break;
   }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ProductResult } from "@/lib/types";
-import { statusToVerdict, type Verdict } from "@/lib/verdict";
+import { resolveVerdict, type Verdict } from "@/lib/verdict";
 
 const STORAGE_KEY = "peanot.history.v1";
 const MAX_ENTRIES = 200;
@@ -44,7 +44,7 @@ function toEntry(result: ProductResult, ts: number): HistoryEntry {
     barcode: result.barcode,
     name: result.productName ?? "Unbekanntes Produkt",
     brand: result.brand ?? "—",
-    verdict: statusToVerdict(result.status),
+    verdict: resolveVerdict(result.status, result.caveats ?? []),
   };
 }
 

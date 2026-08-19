@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import type { ProductResult } from "@/lib/types";
-import { statusToVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/verdict";
+import { resolveVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/verdict";
+import { CAVEATS } from "@/lib/caveats";
 import { getProfiles } from "@/lib/allergens/profile";
 import { beep, vibrate } from "@/lib/feedback";
 import { AppShell, Chip, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
@@ -71,15 +72,19 @@ export default function ResultScreen({
   onScanAgain: () => void;
   onRetry: () => void;
 }) {
-  const verdict = statusToVerdict(result.status);
+  const caveats = result.caveats ?? [];
+  const verdict = resolveVerdict(result.status, caveats);
   const profiles = getProfiles(selectedAllergens);
-  const copy = verdictCopy(verdict, profiles, result.results ?? []);
+  const copy = verdictCopy(verdict, profiles, result.results ?? [], caveats);
   const fg = verdictColor(verdict, P);
 
   const isSafe = verdict === "safe";
   const isDanger = verdict === "danger";
   const isTrace = verdict === "trace";
+  const isPartial = verdict === "partial";
   const isUnknown = verdict === "unknown";
+  // A qualified all-clear stays quiet: only real hits (and traces in strict
+  // mode) are worth an alarm.
   const alarm = isDanger || (isTrace && tracesStrict);
 
   const headlineRef = useRef<HTMLParagraphElement>(null);
@@ -127,10 +132,16 @@ export default function ResultScreen({
     ? `${P.GREEN}10`
     : isDanger
       ? `${P.RED}10`
-      : isTrace
+      : isTrace || isPartial
         ? `${P.AMBER}12`
         : `${P.INK}06`;
-  const accentBd = isSafe ? P.GREEN : isDanger ? P.RED : isTrace ? P.AMBER : `${P.INK}33`;
+  const accentBd = isSafe
+    ? P.GREEN
+    : isDanger
+      ? P.RED
+      : isTrace || isPartial
+        ? P.AMBER
+        : `${P.INK}33`;
 
   const traceOnly = (result.traces ?? []).filter(
     (t) => !(result.allergens ?? []).includes(t),
@@ -321,6 +332,28 @@ export default function ResultScreen({
             </div>
           </div>
 
+          {caveats.length > 0 ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "12px 14px",
+                borderRadius: 10,
+                background: `${P.AMBER}0F`,
+                border: `1.5px dashed ${P.AMBER}`,
+              }}
+            >
+              <Mono style={{ opacity: 0.65, color: P.AMBER }}>vorbehalt</Mono>
+              {caveats.map((key) => (
+                <div key={key} style={{ marginTop: 6 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{CAVEATS[key].title}</div>
+                  <div style={{ fontSize: 12.5, marginTop: 3, opacity: 0.82, lineHeight: 1.45 }}>
+                    {CAVEATS[key].detail}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           {(result.results?.length ?? 0) > 1 ? (
             <div style={{ marginTop: 12 }}>
               <Mono style={{ opacity: 0.6 }}>geprüfte allergene</Mono>
@@ -333,23 +366,25 @@ export default function ResultScreen({
                 }}
               >
                 {result.results!.map((hit) => {
-                  const hv = statusToVerdict(hit.status);
+                  const hv = resolveVerdict(hit.status, caveats);
                   const tone: ChipTone =
-                    hit.status === "JA"
+                    hv === "danger"
                       ? "bad"
-                      : hit.status === "SPUREN"
+                      : hv === "trace" || hv === "partial"
                         ? "warn"
-                        : hit.status === "NEIN"
+                        : hv === "safe"
                           ? "ok"
                           : "neutral";
                   const word =
-                    hit.status === "JA"
+                    hv === "danger"
                       ? "enthalten"
-                      : hit.status === "SPUREN"
+                      : hv === "trace"
                         ? "Spuren"
-                        : hit.status === "NEIN"
-                          ? "frei"
-                          : "keine Daten";
+                        : hv === "partial"
+                          ? "Zutaten frei"
+                          : hv === "safe"
+                            ? "frei"
+                            : "keine Daten";
                   return (
                     <div
                       key={hit.key}

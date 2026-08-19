@@ -26,6 +26,22 @@ Jeder unklare Fall (nicht gefunden, fehlende Daten, Netzwerk-/API-Fehler) wird
 fail-safe als `KEINE_DATEN` rot angezeigt – Erdnuss kann dann nicht
 ausgeschlossen werden.
 
+### Vorbehalte (`lib/caveats.ts`)
+
+Ein `NEIN` ist nur so gut wie der Datensatz dahinter. Deshalb prüft die API
+zusätzlich, ob dem grünen Ergebnis etwas Wesentliches fehlt, und liefert
+`caveats`. Ein Ergebnis mit Vorbehalt wird nicht mehr grün, sondern **amber**
+dargestellt (Verdict `partial`) und nennt den Grund im Klartext:
+
+| Caveat              | Auslöser                                                           |
+| ------------------- | ------------------------------------------------------------------ |
+| `restricted-code`   | Barcode aus dem GS1-Bereich für Handels-Eigencodes (EAN-8 mit 0/2, Präfix 020–029, 040–049, 200–299). Solche Codes sind nicht weltweit eindeutig – der Treffer kann ein anderes Produkt sein. |
+| `checksum-mismatch` | GS1-Prüfziffer passt nicht: Fehlscan oder kein Standard-Barcode.    |
+| `traces-unknown`    | Der Datensatz hat gar kein `traces`-Feld. Fehlende Spurenangabe ist keine geprüfte Spurenfreiheit. |
+
+Vorbehalte können ein Ergebnis nur **abwerten**: an `JA` und `SPUREN` werden sie
+nie angehängt, und aus `KEINE_DATEN` wird nie etwas Grüneres.
+
 ## Entwicklung
 
 ```bash

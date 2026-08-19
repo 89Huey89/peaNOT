@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolveVerdict,
   statusToVerdict,
   VERDICT,
   verdictColor,
@@ -86,9 +87,42 @@ describe("verdictGlyph", () => {
       verdictGlyph("safe"),
       verdictGlyph("danger"),
       verdictGlyph("trace"),
+      verdictGlyph("partial"),
       verdictGlyph("unknown"),
     ];
-    expect(new Set(glyphs).size).toBe(4);
+    expect(new Set(glyphs).size).toBe(5);
     glyphs.forEach((g) => expect(g).not.toBe(""));
+  });
+});
+
+describe("resolveVerdict", () => {
+  it("keeps an unqualified all-clear green", () => {
+    expect(resolveVerdict("NEIN", [])).toBe("safe");
+  });
+
+  it("downgrades an all-clear that carries a caveat", () => {
+    expect(resolveVerdict("NEIN", ["traces-unknown"])).toBe("partial");
+    expect(resolveVerdict("NEIN", ["restricted-code"])).toBe("partial");
+  });
+
+  it("never softens a hit, a trace warning or an unknown", () => {
+    expect(resolveVerdict("JA", ["restricted-code"])).toBe("danger");
+    expect(resolveVerdict("SPUREN", ["restricted-code"])).toBe("trace");
+    expect(resolveVerdict("KEINE_DATEN", ["restricted-code"])).toBe("unknown");
+  });
+});
+
+describe("verdictCopy for a qualified all-clear", () => {
+  it("names the reason for a single allergen", () => {
+    const copy = verdictCopy("partial", getProfiles(["peanut"]), [], ["traces-unknown"]);
+    expect(copy.title).toBe("Keine Erdnuss in den Zutaten.");
+    expect(copy.detail).toContain("Spuren");
+    expect(copy.colorKey).toBe("AMBER");
+  });
+
+  it("falls back to a generic caution without caveat keys", () => {
+    expect(verdictCopy("partial", getProfiles(["peanut", "hazelnut"]), []).detail).toContain(
+      "eingeschränkt",
+    );
   });
 });
