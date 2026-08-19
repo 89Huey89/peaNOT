@@ -8,6 +8,21 @@ import { hasValidCheckDigit, isRestrictedCirculationCode } from "@/lib/barcode";
  */
 export type CaveatKey = "restricted-code" | "checksum-mismatch" | "traces-unknown";
 
+/**
+ * Caveats that question *which product* the record describes, as opposed to
+ * how complete it is. Only these can be settled by the user comparing the
+ * record against the pack in hand.
+ */
+export const IDENTITY_CAVEATS: readonly CaveatKey[] = ["restricted-code", "checksum-mismatch"];
+
+export function isIdentityCaveat(key: CaveatKey): boolean {
+  return IDENTITY_CAVEATS.includes(key);
+}
+
+export function hasIdentityCaveat(keys: CaveatKey[]): boolean {
+  return keys.some(isIdentityCaveat);
+}
+
 export interface CaveatCopy {
   /** Heading of the caveat card. */
   title: string;

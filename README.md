@@ -42,6 +42,24 @@ dargestellt (Verdict `partial`) und nennt den Grund im Klartext:
 Vorbehalte können ein Ergebnis nur **abwerten**: an `JA` und `SPUREN` werden sie
 nie angehängt, und aus `KEINE_DATEN` wird nie etwas Grüneres.
 
+### Packungs-Gegencheck (`lib/packmatch.ts`)
+
+Ob ein Datensatz überhaupt das Produkt in der Hand beschreibt, kann die App
+nicht wissen — der Mensch davor schon. Bei einem Identitäts-Vorbehalt
+(`restricted-code`, `checksum-mismatch`) zeigt das Ergebnis deshalb das
+Datenbank-Foto groß und fragt: **„Passt das zu deiner Packung?"**
+
+- **Ja** → der Identitäts-Vorbehalt ist erledigt, das Ergebnis wird grün
+  (sofern nichts anderes dagegen spricht).
+- **Nein** → der Eintrag gehört zu einem anderen Produkt, das Ergebnis fällt auf
+  `KEINE_DATEN` zurück.
+
+Die Antwort wird pro Barcode lokal gemerkt (`peanot.packmatch.v1`, max. 200
+Einträge), gilt also beim nächsten Scan desselben Codes sofort — auch im
+Verlauf. Gefragt wird nur bei Identitäts-Vorbehalt, damit die Frage nicht zur
+Reflex-Bestätigung verkommt. Auch hier gilt fail-safe: eine Antwort kann ein
+`JA`/`SPUREN` niemals entkräften.
+
 ## Entwicklung
 
 ```bash
