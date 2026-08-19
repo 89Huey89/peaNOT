@@ -3,6 +3,7 @@ import {
   extractBrand,
   extractImageUrl,
   extractProductName,
+  extractRecordMetadata,
   hasUsableData,
   normalizeOffProduct,
   offThumbUrl,
@@ -65,6 +66,18 @@ describe("normalizeOffProduct", () => {
       ingredients_tags: [],
       ingredients_text: "",
     });
+  });
+});
+
+describe("extractRecordMetadata", () => {
+  it("reads OFF timestamp and revision metadata", () => {
+    expect(
+      extractRecordMetadata({ last_modified_t: "1750000000", rev: 12 }),
+    ).toEqual({ dataLastModified: 1750000000, dataRevision: 12 });
+  });
+
+  it("ignores missing or malformed metadata", () => {
+    expect(extractRecordMetadata({ last_modified_t: "unknown", rev: -1 })).toEqual({});
   });
 });
 

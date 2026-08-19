@@ -34,7 +34,7 @@ export const VERDICT: Record<Verdict, VerdictVisual> = {
   safe: {
     colorKey: "GREEN",
     label: "Sicher",
-    headline: "Geprüft. Du kannst beruhigt sein.",
+    headline: "Keine Hinweise in den Daten gefunden.",
     stampWord: "safe",
     stampSub: "all · clear",
   },
@@ -97,7 +97,7 @@ export function verdictCopy(
         label: `Keine ${label}`,
         tag: `keine ${lower}`,
         title: `Keine ${label}.`,
-        detail: "Keine Hinweise in Zutaten oder Allergenliste.",
+        detail: "Keine Hinweise in den hinterlegten Daten. Maßgeblich ist immer die Packung.",
       },
       danger: {
         label: `${label} enthalten`,

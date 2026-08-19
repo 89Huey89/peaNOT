@@ -17,6 +17,14 @@ function nowHHMM(): string {
   return new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatDataDate(timestamp: number): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(timestamp * 1000));
+}
+
 function highlight(text: string, found: string | null | undefined, P: Palette): ReactNode {
   if (!found) return text;
   const idx = text.toLowerCase().indexOf(found.toLowerCase());
@@ -398,6 +406,32 @@ export default function ResultScreen({
                     <span style={{ opacity: 0.7, fontWeight: 500 }}>· Spuren</span>
                   </Chip>
                 ))}
+              </div>
+            </div>
+          ) : null}
+
+          {result.dataLastModified || result.dataRevision ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: `${P.ACCENT}0D`,
+                border: `1px solid ${P.ACCENT}55`,
+                fontSize: 12.5,
+                lineHeight: 1.45,
+              }}
+            >
+              <Mono style={{ opacity: 0.65 }}>datenstand · open food facts</Mono>
+              <div style={{ marginTop: 4 }}>
+                {result.dataLastModified
+                  ? `Zuletzt bearbeitet: ${formatDataDate(result.dataLastModified)}`
+                  : "Bearbeitungsdatum unbekannt"}
+                {result.dataRevision ? ` · Revision ${result.dataRevision}` : ""}
+              </div>
+              <div style={{ marginTop: 3, opacity: 0.72 }}>
+                Eine neue Revision kann auch nur ein Foto oder eine Textkorrektur sein.
+                Sie bestätigt keine neue Rezeptur. Die aktuelle Packung ist maßgeblich.
               </div>
             </div>
           ) : null}
