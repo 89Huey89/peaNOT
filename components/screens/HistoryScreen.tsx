@@ -13,6 +13,7 @@ const FILTERS: { label: string; verdict: Verdict | null }[] = [
   { label: "Sicher", verdict: "safe" },
   { label: "Warnung", verdict: "danger" },
   { label: "Spuren", verdict: "trace" },
+  { label: "Vorbehalt", verdict: "partial" },
   { label: "Unbekannt", verdict: "unknown" },
 ];
 

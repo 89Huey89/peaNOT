@@ -1,10 +1,13 @@
 import type { AllergenHit, PeanutStatus } from "@/lib/types";
 import type { Palette } from "@/lib/theme";
 import type { AllergenProfile } from "@/lib/allergens/profile";
+import { caveatSummary, type CaveatKey } from "@/lib/caveats";
 
-// The result UI speaks in four "verdicts"; the detection engine speaks in four
-// statuses. This is the single place that maps between them.
-export type Verdict = "safe" | "danger" | "trace" | "unknown";
+// The result UI speaks in five "verdicts"; the detection engine speaks in four
+// statuses. This is the single place that maps between them. "partial" has no
+// status of its own: it is a clean result whose confidence is limited by a
+// caveat (see resolveVerdict).
+export type Verdict = "safe" | "danger" | "trace" | "partial" | "unknown";
 
 export function statusToVerdict(status: PeanutStatus): Verdict {
   switch (status) {
@@ -17,6 +20,19 @@ export function statusToVerdict(status: PeanutStatus): Verdict {
     default:
       return "unknown";
   }
+}
+
+/**
+ * The verdict actually shown. A clean result carrying caveats becomes
+ * "partial": we found nothing, but something limits how much that is worth.
+ * Hits and traces are never softened, and an unknown never becomes greener.
+ */
+export function resolveVerdict(
+  status: PeanutStatus,
+  caveats: CaveatKey[] = [],
+): Verdict {
+  const verdict = statusToVerdict(status);
+  return verdict === "safe" && caveats.length > 0 ? "partial" : verdict;
 }
 
 // Visual + allergen-neutral copy. `label` is the short, allergen-neutral word
@@ -52,6 +68,13 @@ export const VERDICT: Record<Verdict, VerdictVisual> = {
     stampWord: "achtung",
     stampSub: "spuren",
   },
+  partial: {
+    colorKey: "AMBER",
+    label: "Mit Vorbehalt",
+    headline: "Kein Treffer — aber mit Vorbehalt.",
+    stampWord: "vorbehalt",
+    stampSub: "packung · prüfen",
+  },
   unknown: {
     colorKey: "DIM",
     label: "Unbekannt",
@@ -78,11 +101,15 @@ function joinLabels(hits: AllergenHit[], status: PeanutStatus): string {
  * Build the allergen-aware verdict copy. Single selection reads like the
  * original peanut wording ("Keine Erdnuss."); multi selection summarizes across
  * the chosen allergens, naming the offenders from the per-allergen hits.
+ *
+ * The "partial" detail line is assembled from the caveats, so the screen says
+ * *why* the all-clear is qualified instead of just looking amber.
  */
 export function verdictCopy(
   verdict: Verdict,
   profiles: AllergenProfile[],
   hits: AllergenHit[] = [],
+  caveats: CaveatKey[] = [],
 ): VerdictCopy {
   const visual = VERDICT[verdict];
   const single = profiles.length === 1 ? profiles[0] : undefined;
@@ -110,6 +137,12 @@ export function verdictCopy(
         tag: "spuren möglich",
         title: "Spuren möglich.",
         detail: `Hersteller-Hinweis auf mögliche Spuren von ${label}.`,
+      },
+      partial: {
+        label: `Keine ${label} (Vorbehalt)`,
+        tag: `keine ${lower} · vorbehalt`,
+        title: `Keine ${label} in den Zutaten.`,
+        detail: caveatSummary(caveats) || "Das Ergebnis ist nur eingeschränkt belastbar.",
       },
       unknown: {
         label: "Unbekannt",
@@ -142,6 +175,12 @@ export function verdictCopy(
           ? `Mögliche Spuren: ${traces}.`
           : "Hersteller-Hinweis auf mögliche Spuren.",
       },
+      partial: {
+        label: "Vorbehalt",
+        tag: "vorbehalt",
+        title: "Zutaten frei.",
+        detail: caveatSummary(caveats) || "Das Ergebnis ist nur eingeschränkt belastbar.",
+      },
       unknown: {
         label: "Unbekannt",
         tag: "keine daten",
@@ -164,6 +203,7 @@ const VERDICT_GLYPH: Record<Verdict, string> = {
   safe: "✓",
   danger: "✕",
   trace: "⚠",
+  partial: "!",
   unknown: "?",
 };
 

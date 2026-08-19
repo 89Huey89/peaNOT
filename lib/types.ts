@@ -1,3 +1,5 @@
+import type { CaveatKey } from "@/lib/caveats";
+
 export type PeanutStatus = "JA" | "SPUREN" | "NEIN" | "KEINE_DATEN";
 
 /** Sprechender Alias für neuen Code; PeanutStatus bleibt aus Kompatibilität. */
@@ -98,6 +100,11 @@ export interface ProductResult {
   found?: string | null;
   /** Per-allergen breakdown for the checked allergens. */
   results?: AllergenHit[];
+  /**
+   * Reasons a clean result is only conditionally clean (unknown barcode
+   * identity, missing traces data). Keys resolve to copy in lib/caveats.ts.
+   */
+  caveats?: CaveatKey[];
   /** German allergen labels declared on the product. */
   allergens?: string[];
   /** German labels for allergens flagged as possible traces. */

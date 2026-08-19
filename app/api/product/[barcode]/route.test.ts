@@ -102,6 +102,59 @@ describe("GET /api/product/[barcode]", () => {
     expect(body.status).toBe("NEIN");
   });
 
+  it("qualifies a clean result from a retailer in-store code", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "Gelatelli mini mix fruit",
+      brand: "Gelatelli",
+      imageUrl: "",
+      fields: fields({
+        allergens_tags: ["en:milk"],
+        traces_tags: ["en:nuts"],
+        ingredients_text: "Lait écrémé, sucre",
+      }),
+    });
+
+    const { body } = await call("20137946");
+    expect(body.status).toBe("NEIN");
+    expect(body.caveats).toEqual(["restricted-code"]);
+  });
+
+  it("qualifies a clean result whose record carries no traces data", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "Milk",
+      brand: "ACME",
+      imageUrl: "",
+      fields: fields({ allergens_tags: ["en:milk"], ingredients_text: "Milch" }),
+    });
+
+    const { body } = await call("4011200296908");
+    expect(body.caveats).toEqual(["traces-unknown"]);
+  });
+
+  it("does not qualify a hit", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "Peanut bar",
+      brand: "ACME",
+      imageUrl: "",
+      fields: fields({ allergens_tags: ["en:peanuts"], ingredients_text: "Erdnüsse" }),
+    });
+
+    const { body } = await call("20137946");
+    expect(body.status).toBe("JA");
+    expect(body.caveats).toEqual([]);
+  });
+
+  it("keeps the barcode caveat when nothing was found", async () => {
+    mockOutcome({ kind: "not-found" });
+
+    const { body } = await call("20137946");
+    expect(body.status).toBe("KEINE_DATEN");
+    expect(body.caveats).toEqual(["restricted-code"]);
+  });
+
   it("returns 200 KEINE_DATEN with name for no-data products", async () => {
     mockOutcome({ kind: "no-data", productName: "Mystery", brand: "ACME", imageUrl: "" });
 

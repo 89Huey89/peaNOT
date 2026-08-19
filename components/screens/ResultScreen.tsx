@@ -3,11 +3,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import type { ProductResult } from "@/lib/types";
-import { statusToVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/verdict";
+import { resolveVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/verdict";
+import { CAVEATS, hasIdentityCaveat } from "@/lib/caveats";
+import { applyPackMatch } from "@/lib/packmatch";
+import { offProductUrl } from "@/lib/off/link";
+import { usePackMatch } from "@/components/usePackMatch";
 import { getProfiles } from "@/lib/allergens/profile";
 import { beep, vibrate } from "@/lib/feedback";
 import { AppShell, Chip, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
-import { ArrowRight, RotateCcw, X } from "lucide-react";
+import { ArrowRight, ExternalLink, RotateCcw, X } from "lucide-react";
 
 function shortEan(ean: string): string {
   return ean.length > 8 ? `${ean.slice(0, 4)}…${ean.slice(-4)}` : ean;
@@ -23,6 +27,36 @@ function formatDataDate(timestamp: number): string {
     month: "2-digit",
     year: "numeric",
   }).format(new Date(timestamp * 1000));
+}
+
+/**
+ * Link into the Open Food Facts record. Shown wherever peaNOT tells the user
+ * its data may be wrong or incomplete: the fix belongs in the database, where
+ * it helps the next person scanning the same code.
+ */
+function OffRecordLink({ barcode, label, P }: { barcode: string; label: string; P: Palette }) {
+  return (
+    <a
+      href={offProductUrl(barcode)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="tap"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 8,
+        color: P.INK,
+        fontSize: 12.5,
+        fontWeight: 600,
+        textDecoration: "underline",
+        textUnderlineOffset: 3,
+      }}
+    >
+      {label}
+      <ExternalLink size={13} aria-hidden="true" />
+    </a>
+  );
 }
 
 function highlight(text: string, found: string | null | undefined, P: Palette): ReactNode {
@@ -71,16 +105,32 @@ export default function ResultScreen({
   onScanAgain: () => void;
   onRetry: () => void;
 }) {
-  const verdict = statusToVerdict(result.status);
+  const caveats = result.caveats ?? [];
+  const { answer, answerPackMatch } = usePackMatch(result.barcode);
+  const resolved = applyPackMatch(result.status, caveats, answer);
+  const verdict = resolveVerdict(resolved.status, resolved.caveats);
   const profiles = getProfiles(selectedAllergens);
-  const copy = verdictCopy(verdict, profiles, result.results ?? []);
+  const copy = verdictCopy(verdict, profiles, result.results ?? [], resolved.caveats);
   const fg = verdictColor(verdict, P);
 
   const isSafe = verdict === "safe";
   const isDanger = verdict === "danger";
   const isTrace = verdict === "trace";
+  const isPartial = verdict === "partial";
   const isUnknown = verdict === "unknown";
+  // A qualified all-clear stays quiet: only real hits (and traces in strict
+  // mode) are worth an alarm.
   const alarm = isDanger || (isTrace && tracesStrict);
+
+  // The record can only be matched to the pack in hand by the person holding
+  // it — so ask, but only where the barcode itself leaves identity open.
+  const identityOpen = hasIdentityCaveat(caveats);
+  const mismatch = answer === "mismatch" && resolved.status === "KEINE_DATEN";
+  const detailText = mismatch
+    ? "Diese Angaben gehören zu einem anderen Produkt. Bitte die Zutatenliste auf deiner Verpackung lesen."
+    : isUnknown
+      ? result.message ?? copy.detail
+      : copy.detail;
 
   const headlineRef = useRef<HTMLParagraphElement>(null);
   const [announce, setAnnounce] = useState("");
@@ -111,10 +161,9 @@ export default function ResultScreen({
   // Announce the verdict to assistive tech. Starting empty and filling in an
   // effect makes it a live-region *change*, so it is reliably spoken.
   useEffect(() => {
-    const detail = isUnknown ? result.message ?? copy.detail : copy.detail;
-    setAnnounce(`${copy.title} ${detail}`);
+    setAnnounce(`${copy.title} ${detailText}`);
     setImgFailed(false);
-  }, [result, copy.title, copy.detail, isUnknown]);
+  }, [result, copy.title, detailText]);
 
   // Alert the user on a hit (and on traces when strict mode is on).
   useEffect(() => {
@@ -127,10 +176,16 @@ export default function ResultScreen({
     ? `${P.GREEN}10`
     : isDanger
       ? `${P.RED}10`
-      : isTrace
+      : isTrace || isPartial
         ? `${P.AMBER}12`
         : `${P.INK}06`;
-  const accentBd = isSafe ? P.GREEN : isDanger ? P.RED : isTrace ? P.AMBER : `${P.INK}33`;
+  const accentBd = isSafe
+    ? P.GREEN
+    : isDanger
+      ? P.RED
+      : isTrace || isPartial
+        ? P.AMBER
+        : `${P.INK}33`;
 
   const traceOnly = (result.traces ?? []).filter(
     (t) => !(result.allergens ?? []).includes(t),
@@ -314,12 +369,179 @@ export default function ResultScreen({
                   {copy.title}
                 </div>
                 <div style={{ fontSize: 12.5, marginTop: 6, opacity: 0.78, lineHeight: 1.35 }}>
-                  {isUnknown ? result.message ?? copy.detail : copy.detail}
+                  {detailText}
                   {isTrace && tracesStrict ? " Im Strikt-Modus wie ein Treffer behandelt." : ""}
                 </div>
               </div>
             </div>
           </div>
+
+          {identityOpen && answer === null ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "14px 14px 12px",
+                borderRadius: 12,
+                background: `${P.ACCENT}0D`,
+                border: `1.5px solid ${P.ACCENT}`,
+              }}
+            >
+              <Mono style={{ opacity: 0.65 }}>gegencheck · packung</Mono>
+              <div
+                style={{
+                  fontFamily: "'Fraunces', serif",
+                  fontWeight: 800,
+                  fontSize: 18,
+                  marginTop: 3,
+                  lineHeight: 1.15,
+                }}
+              >
+                Passt das zu deiner Packung?
+              </div>
+              <div style={{ fontSize: 12.5, marginTop: 4, opacity: 0.82, lineHeight: 1.45 }}>
+                Dieser Barcode ist nicht eindeutig. Vergleiche Foto, Marke und Name mit dem
+                Produkt in deiner Hand — nur du kannst das entscheiden.
+              </div>
+              {result.imageUrl && !imgFailed ? (
+                <img
+                  src={result.imageUrl}
+                  alt={
+                    result.productName
+                      ? `Foto von ${result.productName} aus der Datenbank`
+                      : "Produktfoto aus der Datenbank"
+                  }
+                  loading="lazy"
+                  onError={() => setImgFailed(true)}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    maxHeight: 190,
+                    objectFit: "contain",
+                    borderRadius: 10,
+                    marginTop: 10,
+                    background: "#ece1c8",
+                    border: `1px solid ${P.INK}22`,
+                  }}
+                />
+              ) : null}
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="tap"
+                  onClick={() => answerPackMatch("match")}
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    color: P.INK,
+                    border: `1.5px solid ${P.GREEN}`,
+                    borderRadius: 99,
+                    padding: "11px 10px",
+                    fontWeight: 700,
+                    fontSize: 13.5,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Ja, passt
+                </button>
+                <button
+                  type="button"
+                  className="tap"
+                  onClick={() => answerPackMatch("mismatch")}
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    color: P.INK,
+                    border: `1.5px solid ${P.RED}`,
+                    borderRadius: 99,
+                    padding: "11px 10px",
+                    fontWeight: 700,
+                    fontSize: 13.5,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Nein, andere
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {identityOpen && answer !== null ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "12px 14px",
+                borderRadius: 10,
+                background: mismatch ? `${P.RED}0D` : `${P.GREEN}0D`,
+                border: `1.5px solid ${mismatch ? P.RED : P.GREEN}55`,
+              }}
+            >
+              <Mono style={{ opacity: 0.65 }}>gegencheck · von dir</Mono>
+              <div style={{ fontWeight: 700, fontSize: 13.5, marginTop: 4 }}>
+                {mismatch ? "Andere Packung" : "Passt zu deiner Packung"}
+              </div>
+              <div style={{ fontSize: 12.5, marginTop: 3, opacity: 0.82, lineHeight: 1.45 }}>
+                {mismatch
+                  ? "Du hast angegeben, dass der Eintrag nicht zu deinem Produkt gehört. Damit ist das Ergebnis hinfällig — es zählt die Zutatenliste auf der Verpackung."
+                  : "Du hast den Eintrag deiner Packung zugeordnet. Beim nächsten Scan dieses Codes gilt die Antwort weiter."}
+              </div>
+              {mismatch ? (
+                <div>
+                  <OffRecordLink
+                    barcode={result.barcode}
+                    label="Eintrag bei Open Food Facts prüfen"
+                    P={P}
+                  />
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className="tap"
+                onClick={() => answerPackMatch(null)}
+                style={{
+                  marginTop: 8,
+                  background: "transparent",
+                  color: P.INK,
+                  border: `1px solid ${P.INK}44`,
+                  borderRadius: 99,
+                  padding: "7px 12px",
+                  fontWeight: 600,
+                  fontSize: 12.5,
+                  fontFamily: "inherit",
+                }}
+              >
+                Antwort zurücknehmen
+              </button>
+            </div>
+          ) : null}
+
+          {resolved.caveats.length > 0 ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "12px 14px",
+                borderRadius: 10,
+                background: `${P.AMBER}0F`,
+                border: `1.5px dashed ${P.AMBER}`,
+              }}
+            >
+              <Mono style={{ opacity: 0.65, color: P.AMBER }}>vorbehalt</Mono>
+              {resolved.caveats.map((key) => (
+                <div key={key} style={{ marginTop: 6 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{CAVEATS[key].title}</div>
+                  <div style={{ fontSize: 12.5, marginTop: 3, opacity: 0.82, lineHeight: 1.45 }}>
+                    {CAVEATS[key].detail}
+                  </div>
+                </div>
+              ))}
+              {resolved.caveats.includes("traces-unknown") ? (
+                <OffRecordLink
+                  barcode={result.barcode}
+                  label="Spurenangabe bei Open Food Facts ergänzen"
+                  P={P}
+                />
+              ) : null}
+            </div>
+          ) : null}
 
           {(result.results?.length ?? 0) > 1 ? (
             <div style={{ marginTop: 12 }}>
@@ -333,23 +555,25 @@ export default function ResultScreen({
                 }}
               >
                 {result.results!.map((hit) => {
-                  const hv = statusToVerdict(hit.status);
+                  const hv = resolveVerdict(hit.status, caveats);
                   const tone: ChipTone =
-                    hit.status === "JA"
+                    hv === "danger"
                       ? "bad"
-                      : hit.status === "SPUREN"
+                      : hv === "trace" || hv === "partial"
                         ? "warn"
-                        : hit.status === "NEIN"
+                        : hv === "safe"
                           ? "ok"
                           : "neutral";
                   const word =
-                    hit.status === "JA"
+                    hv === "danger"
                       ? "enthalten"
-                      : hit.status === "SPUREN"
+                      : hv === "trace"
                         ? "Spuren"
-                        : hit.status === "NEIN"
-                          ? "frei"
-                          : "keine Daten";
+                        : hv === "partial"
+                          ? "Zutaten frei"
+                          : hv === "safe"
+                            ? "frei"
+                            : "keine Daten";
                   return (
                     <div
                       key={hit.key}
@@ -436,7 +660,7 @@ export default function ResultScreen({
             </div>
           ) : null}
 
-          {isUnknown ? (
+          {isUnknown && !mismatch ? (
             <div
               style={{
                 marginTop: 14,

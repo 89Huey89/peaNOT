@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ProductResult } from "@/lib/types";
-import { statusToVerdict, type Verdict } from "@/lib/verdict";
+import { resolveVerdict, type Verdict } from "@/lib/verdict";
+import { applyPackMatch, readPackMatch } from "@/lib/packmatch";
 
 const STORAGE_KEY = "peanot.history.v1";
 const MAX_ENTRIES = 200;
@@ -38,13 +39,20 @@ function persist(entries: HistoryEntry[]) {
 }
 
 function toEntry(result: ProductResult, ts: number): HistoryEntry {
+  // A pack comparison the user made earlier applies to this scan too, so the
+  // list shows the verdict they actually ended up with.
+  const resolved = applyPackMatch(
+    result.status,
+    result.caveats ?? [],
+    readPackMatch(result.barcode),
+  );
   return {
     id: `h_${ts}_${result.barcode}`,
     ts,
     barcode: result.barcode,
     name: result.productName ?? "Unbekanntes Produkt",
     brand: result.brand ?? "—",
-    verdict: statusToVerdict(result.status),
+    verdict: resolveVerdict(resolved.status, resolved.caveats),
   };
 }
 
