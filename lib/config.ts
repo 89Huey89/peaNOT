@@ -21,6 +21,8 @@ export const OFF_FIELDS = [
   "image_front_url",
   "image_small_url",
   "image_url",
+  "last_modified_t",
+  "rev",
 ].join(",");
 
 export const OFF_TIMEOUT_MS = 6000;

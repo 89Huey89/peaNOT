@@ -47,8 +47,18 @@ export type OffFetchOutcome =
       productName: string;
       brand: string;
       imageUrl: string;
+      /** OFF record metadata; an edit is not necessarily a recipe change. */
+      dataLastModified?: number;
+      dataRevision?: number;
     }
-  | { kind: "no-data"; productName: string; brand: string; imageUrl: string }
+  | {
+      kind: "no-data";
+      productName: string;
+      brand: string;
+      imageUrl: string;
+      dataLastModified?: number;
+      dataRevision?: number;
+    }
   | { kind: "not-found" }
   | { kind: "error"; cause: "network" | "timeout" | "http" | "parse" };
 
@@ -78,6 +88,10 @@ export interface ProductResult {
   message?: string;
   /** Product photo URL from Open Food Facts, when available. */
   imageUrl?: string | null;
+  /** Unix timestamp of the last OFF record edit (not proof of a recipe change). */
+  dataLastModified?: number;
+  /** OFF record revision number, when supplied by the API. */
+  dataRevision?: number;
   /** Freeform ingredient text, when available (used as on-screen evidence). */
   ingredients?: string | null;
   /** Literal allergen mention found in the ingredients, for highlighting. */

@@ -4,7 +4,14 @@ Private, mobile-first peanut-allergen barcode scanner. Scan a product barcode
 in the browser, look it up on Open Food Facts, and get a clear peanut verdict.
 
 > **Sicherheitshinweis:** Kein Erdnuss-Hinweis in der Datenbank gefunden bedeutet
-> nicht garantiert erdnussfrei. Bei unklarer Datenlage wird nie „NEIN" angezeigt.
+> nicht garantiert erdnussfrei. Rezeptur und Verpackung können sich bei gleicher
+> EAN ändern; maßgeblich ist deshalb immer die Packung in der Hand. Bei unklarer
+> Datenlage wird nie „NEIN" angezeigt.
+
+Wenn Open Food Facts die Metadaten liefert, zeigt das Ergebnis außerdem Datum
+und Revisionsnummer der letzten Datenbankbearbeitung. Das macht einen alten
+Datensatz sichtbar, beweist aber keine Rezepturänderung: Eine Revision kann
+ebenso durch ein neues Foto oder eine reine Textkorrektur entstehen.
 
 ## Status-Logik
 

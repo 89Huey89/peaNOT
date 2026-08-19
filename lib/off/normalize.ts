@@ -49,6 +49,24 @@ export function extractImageUrl(raw: unknown): string {
   ).trim();
 }
 
+/** OFF edit metadata. It signals database activity, not a recipe change. */
+export function extractRecordMetadata(raw: unknown): {
+  dataLastModified?: number;
+  dataRevision?: number;
+} {
+  const product = (raw ?? {}) as Record<string, unknown>;
+  const timestamp = Number(product.last_modified_t);
+  const revision = Number(product.rev);
+  return {
+    ...(Number.isFinite(timestamp) && timestamp > 0
+      ? { dataLastModified: timestamp }
+      : {}),
+    ...(Number.isInteger(revision) && revision > 0
+      ? { dataRevision: revision }
+      : {}),
+  };
+}
+
 /**
  * Rewrite an OFF product image URL to its 100px rendition for small list
  * thumbnails. OFF renditions look like `…/front_de.3.200.jpg`; we swap the size

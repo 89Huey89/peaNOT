@@ -68,6 +68,8 @@ export async function GET(
         allergens: allergenLabels(outcome.fields.allergens_tags),
         traces: allergenLabels(outcome.fields.traces_tags),
         imageUrl: outcome.imageUrl || null,
+        dataLastModified: outcome.dataLastModified,
+        dataRevision: outcome.dataRevision,
       };
       break;
     }
@@ -79,6 +81,8 @@ export async function GET(
         status: "KEINE_DATEN",
         message: keineDatenMessage("no-data", profiles),
         imageUrl: outcome.imageUrl || null,
+        dataLastModified: outcome.dataLastModified,
+        dataRevision: outcome.dataRevision,
       };
       break;
     case "not-found":

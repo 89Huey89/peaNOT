@@ -30,6 +30,8 @@ describe("fetchOffProduct", () => {
           allergens_tags: ["en:peanuts"],
           ingredients_text: "Sugar, peanuts",
           image_front_small_url: "https://img/peanut-bar.jpg",
+          last_modified_t: 1750000000,
+          rev: 12,
         },
       }),
     );
@@ -41,6 +43,8 @@ describe("fetchOffProduct", () => {
       productName: "Peanut Bar",
       brand: "ACME",
       imageUrl: "https://img/peanut-bar.jpg",
+      dataLastModified: 1750000000,
+      dataRevision: 12,
       fields: {
         allergens_tags: ["en:peanuts"],
         traces_tags: [],
@@ -48,6 +52,26 @@ describe("fetchOffProduct", () => {
         ingredients_text: "Sugar, peanuts",
       },
     });
+  });
+
+  it("applies warning-only corrections for a reused EAN", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        status: 1,
+        product: {
+          product_name: "Gelatelli Mini Mix Fruit",
+          ingredients_text: "Milch, Zucker, Fruchtpüree",
+          allergens_tags: ["en:milk"],
+        },
+      }),
+    );
+
+    const outcome = await fetchOffProduct("20137946");
+
+    expect(outcome.kind).toBe("found");
+    if (outcome.kind === "found") {
+      expect(outcome.fields.traces_tags).toEqual(["en:peanuts"]);
+    }
   });
 
   it("sends a descriptive User-Agent and requests fields", async () => {

@@ -72,6 +72,22 @@ describe("GET /api/product/[barcode]", () => {
     expect(body.status).toBe("SPUREN");
   });
 
+  it("exposes OFF edit metadata without treating it as a recipe change", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "Cookie",
+      brand: "ACME",
+      imageUrl: "",
+      dataLastModified: 1750000000,
+      dataRevision: 12,
+      fields: fields({ ingredients_text: "Mehl" }),
+    });
+
+    const { body } = await call("4011200296908");
+    expect(body.dataLastModified).toBe(1750000000);
+    expect(body.dataRevision).toBe(12);
+  });
+
   it("returns 200 NEIN for a clean product", async () => {
     mockOutcome({
       kind: "found",
