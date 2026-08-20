@@ -10,7 +10,7 @@ in the browser, look it up on Open Food Facts, and get a clear peanut verdict.
 
 Wenn Open Food Facts die Metadaten liefert, zeigt das Ergebnis außerdem Datum
 und Revisionsnummer der letzten Datenbankbearbeitung. Das macht einen alten
-Datensatz sichtbar, beweist aber keine Rezepturänderung: Eine Revision kann
+Datensatz sichtbar, beweist aber keine Rezептuränderung: Eine Revision kann
 ebenso durch ein neues Foto oder eine reine Textkorrektur entstehen.
 
 ## Status-Logik
@@ -65,6 +65,37 @@ Eintrag bei Open Food Facts (`lib/off/link.ts`) — bei gemeldeter Abweichung zu
 Prüfen, bei fehlender Spurenangabe zum Ergänzen. Korrekturen landen so dort, wo
 sie dem nächsten Menschen mit demselben Code helfen.
 
+### Rückruf-Abgleich (`lib/recalls/`)
+
+Nicht deklarierte Allergene sind einer der häufigsten Gründe für amtliche
+Lebensmittel-Rückrufe — genau der Fall, den keine Zutatenliste der Welt
+abfängt. Deshalb gleicht die API jeden Treffer zusätzlich gegen die aktuellen
+Meldungen von [lebensmittelwarnung.de](https://www.lebensmittelwarnung.de)
+ab (amtliches Portal der Bundesländer und des BVL; REST-Schnittstelle wie bei
+[bund.dev](https://github.com/bundesAPI/lebensmittelwarnung-api) dokumentiert,
+inklusive des dort veröffentlichten statischen Zugriffsschlüssels).
+
+Amtliche Meldungen nennen Produktnamen, keine Barcodes. Der Abgleich läuft
+deshalb über den Namen und die Marke aus dem Open-Food-Facts-Datensatz
+(`lib/recalls/match.ts`) und ist bewusst **warn-only**:
+
+- Ein Namens-Treffer zeigt eine rote Karte „Rückruf könnte dieses Produkt
+  betreffen" mit Link zur amtlichen Meldung — das Verdict (JA/NEIN/…) ändert
+  er nie, denn der Abgleich kann irren. Prüfen muss der Mensch: Meldung
+  öffnen, Charge und MHD vergleichen.
+- Kein Treffer heißt nur „kein Namens-Treffer im Abgleichsfenster
+  (180 Tage)", nie „kein Rückruf existiert". Das Ergebnis zeigt das als
+  dezente Statuszeile, nicht als Entwarnung.
+- Ist das Portal nicht erreichbar, sagt die Statuszeile auch das — still
+  scheitern würde ein grünes Ergebnis vertrauenswürdiger aussehen lassen,
+  als es ist.
+
+Ein einzelnes generisches Wort („Erdnüsse") reicht nie für einen Treffer:
+verlangt wird ein Großteil des Produktnamens, mit niedrigerer Schwelle, wenn
+zusätzlich die Marke in der Meldung auftaucht. Die Warnliste wird serverseitig
+gecacht (`LMW_REVALIDATE_S`), sodass Scans das Portal nicht pro Anfrage
+treffen.
+
 ## Entwicklung
 
 ```bash
@@ -113,6 +144,8 @@ Keys `peanot.history.v1` / `peanot.prefs.v1`). Kein Account, kein Server-State �
   auf weitere Allergene erweiterbar) inkl. `labels` (Allergen-Tags → Labels) und
   `evidence` (Erdnuss-Fundstelle im Zutatentext).
 - `lib/off/` – serverseitiger Open-Food-Facts-Client (setzt User-Agent) + defensive Normalisierung.
+- `lib/recalls/` – Client für lebensmittelwarnung.de, namensbasierter
+  Rückruf-Abgleich (warn-only) und `checkRecalls`-Fassade für die Route.
 - `lib/theme.ts`, `lib/verdict.ts`, `lib/time.ts` – Palette, Status→Verdict-Mapping, relative Zeiten.
 - `app/api/product/[barcode]/route.ts` – API-Route, komponiert Client + Erkennung.
 - `app/page.tsx` – Client-Router über die Screens.

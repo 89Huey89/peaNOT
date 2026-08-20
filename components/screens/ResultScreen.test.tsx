@@ -132,3 +132,59 @@ describe("ResultScreen pack comparison", () => {
     expect(screen.queryByText("Andere Packung")).not.toBeInTheDocument();
   });
 });
+
+describe("ResultScreen recall comparison", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("shows a recall card with link when a notice matches", () => {
+    renderResult({
+      ...CLEAN_RESULT,
+      recall: {
+        status: "ok",
+        matches: [
+          {
+            title: "Gelatelli mini mix fruit, 500 ml",
+            link: "https://www.lebensmittelwarnung.de/x",
+            publishedDate: 1_763_000_000_000,
+          },
+        ],
+      },
+    });
+
+    expect(
+      screen.getByText("Rückruf könnte dieses Produkt betreffen"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Gelatelli mini mix fruit, 500 ml")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Meldung öffnen/ })).toHaveAttribute(
+      "href",
+      "https://www.lebensmittelwarnung.de/x",
+    );
+  });
+
+  it("shows only a quiet status line when nothing matched", () => {
+    renderResult({ ...CLEAN_RESULT, recall: { status: "ok", matches: [] } });
+
+    expect(
+      screen.queryByText("Rückruf könnte dieses Produkt betreffen"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/rückruf-abgleich · lebensmittelwarnung.de · kein namenstreffer/),
+    ).toBeInTheDocument();
+  });
+
+  it("says when the recall portal was unreachable", () => {
+    renderResult({ ...CLEAN_RESULT, recall: { status: "unavailable" } });
+
+    expect(
+      screen.getByText(/lebensmittelwarnung.de nicht erreichbar/),
+    ).toBeInTheDocument();
+  });
+
+  it("stays silent when the comparison never ran", () => {
+    renderResult();
+
+    expect(screen.queryByText(/rückruf-abgleich/)).not.toBeInTheDocument();
+  });
+});
