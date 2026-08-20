@@ -10,7 +10,7 @@ in the browser, look it up on Open Food Facts, and get a clear peanut verdict.
 
 Wenn Open Food Facts die Metadaten liefert, zeigt das Ergebnis außerdem Datum
 und Revisionsnummer der letzten Datenbankbearbeitung. Das macht einen alten
-Datensatz sichtbar, beweist aber keine Rezептuränderung: Eine Revision kann
+Datensatz sichtbar, beweist aber keine Rezepturänderung: Eine Revision kann
 ebenso durch ein neues Foto oder eine reine Textkorrektur entstehen.
 
 ## Status-Logik
