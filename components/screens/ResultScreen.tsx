@@ -359,11 +359,18 @@ export default function ResultScreen({
                   style={{
                     fontFamily: "'Fraunces', serif",
                     fontWeight: 800,
-                    fontSize: 26,
+                    // The stamp keeps its 88px, so on narrow phones the verdict
+                    // has to give: full size from ~390px up, smaller below.
+                    fontSize: "clamp(20px, 6.7vw, 26px)",
                     color: fg,
                     lineHeight: 1.0,
                     marginTop: 3,
                     textWrap: "balance",
+                    // Long allergen labels ("Schalenfrüchte") must break rather
+                    // than push past the card on narrow phones — hyphenated
+                    // where German allows it, hard-broken only as a last resort.
+                    hyphens: "auto",
+                    overflowWrap: "break-word",
                   }}
                 >
                   {copy.title}
