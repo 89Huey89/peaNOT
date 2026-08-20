@@ -67,6 +67,31 @@ export function SectionTitle({
   );
 }
 
+const STAMP_SIZE = 88;
+// Usable width inside the circle: the ring is 3px double on both sides and the
+// text still has to clear the curve, so we keep a margin off the diameter.
+const STAMP_INNER = 62;
+
+/**
+ * The stamp is a fixed-diameter circle but the words are not fixed length:
+ * "vorbehalt" is more than twice as wide as "safe" at the same size. Without
+ * this the long ones bleed out of the ring and collide with the verdict text
+ * beside them (worst on narrow phones). So the word shrinks to fit its own
+ * length, and the subline wraps instead of running past the edge.
+ *
+ * The divisors are the rough average glyph advance per font: ~0.52em for
+ * Fraunces 800 italic, ~0.74em for the mono subline (0.6em advance plus its
+ * .14em tracking).
+ */
+function stampWordSize(word: string): number {
+  return Math.min(24, Math.floor((STAMP_INNER / (word.length * 0.52)) * 10) / 10);
+}
+
+function stampSubSize(sub: string): number {
+  const longestChunk = sub.split(" ").reduce((a, b) => (b.length > a.length ? b : a), "");
+  return Math.min(8, Math.floor((STAMP_INNER / (longestChunk.length * 0.74)) * 10) / 10);
+}
+
 export function Stamp({
   verdict,
   P,
@@ -82,8 +107,8 @@ export function Stamp({
     <div
       className={animate ? "stamp-in" : undefined}
       style={{
-        width: 88,
-        height: 88,
+        width: STAMP_SIZE,
+        height: STAMP_SIZE,
         borderRadius: 99,
         color: fg,
         border: `3px double ${fg}`,
@@ -94,13 +119,35 @@ export function Stamp({
         textAlign: "center",
         lineHeight: 1,
         flexShrink: 0,
+        overflow: "hidden",
       }}
     >
-      <div>
-        <div style={{ fontFamily: SERIF, fontWeight: 800, fontSize: 24, fontStyle: "italic" }}>
+      <div style={{ width: STAMP_INNER }}>
+        <div
+          data-stamp="word"
+          style={{
+            fontFamily: SERIF,
+            fontWeight: 800,
+            fontSize: stampWordSize(stampWord),
+            fontStyle: "italic",
+          }}
+        >
           {stampWord}
         </div>
-        <Mono style={{ fontSize: 8, opacity: 0.85 }}>{stampSub}</Mono>
+        <Mono
+          style={{
+            display: "block",
+            fontSize: stampSubSize(stampSub),
+            opacity: 0.85,
+            lineHeight: 1.3,
+            marginTop: 2,
+            // letter-spacing also trails the last glyph, which pushes the line
+            // off-centre inside the circle; pull it back.
+            marginRight: "-.14em",
+          }}
+        >
+          {stampSub}
+        </Mono>
       </div>
     </div>
   );
