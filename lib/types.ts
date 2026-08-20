@@ -80,6 +80,24 @@ export type OffSearchOutcome =
   | { kind: "ok"; results: ProductSearchResult[] }
   | { kind: "error"; cause: "network" | "timeout" | "http" | "parse" };
 
+/** One official recall notice that plausibly concerns the scanned product. */
+export interface RecallMatch {
+  title: string;
+  /** Link into the notice on lebensmittelwarnung.de, when supplied. */
+  link: string | null;
+  /** Publication time in ms since epoch, when supplied. */
+  publishedDate: number | null;
+}
+
+/**
+ * Outcome of the warn-only recall comparison against lebensmittelwarnung.de.
+ * Matching is name-based (notices carry no barcodes), so "ok" with no matches
+ * means "nothing found in the comparison", never "no recall exists".
+ */
+export type RecallCheckResult =
+  | { status: "ok"; matches: RecallMatch[] }
+  | { status: "unavailable" };
+
 /** Public response shape returned by /api/product/[barcode]. */
 export interface ProductResult {
   barcode: string;
@@ -105,6 +123,11 @@ export interface ProductResult {
    * identity, missing traces data). Keys resolve to copy in lib/caveats.ts.
    */
   caveats?: CaveatKey[];
+  /**
+   * Warn-only comparison against official recall notices, present whenever
+   * the record offered a name or brand to compare with.
+   */
+  recall?: RecallCheckResult;
   /** German allergen labels declared on the product. */
   allergens?: string[];
   /** German labels for allergens flagged as possible traces. */

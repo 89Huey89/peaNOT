@@ -52,3 +52,32 @@ export const OFF_SEARCH_FIELDS = [
 export const OFF_SEARCH_PAGE_SIZE = 20;
 
 export const OFF_SEARCH_TIMEOUT_MS = 6000;
+
+/**
+ * lebensmittelwarnung.de — Germany's official food recall portal. The REST
+ * endpoint is the one behind the official portal/app, documented at bund.dev
+ * (bundesAPI/lebensmittelwarnung-api) including the static public API key
+ * below: not a secret, but the portal's documented access key.
+ */
+export const LMW_API_URL =
+  "https://megov.bayern.de/verbraucherschutz/baystmuv-verbraucherinfo/rest/api/warnings/merged";
+
+export const LMW_AUTH_HEADER =
+  "baystmuv-vi-1.0 os=ios, key=9d9e8972-ff15-4943-8fea-117b5a973c61";
+
+export const LMW_TIMEOUT_MS = 6000;
+
+/**
+ * Seconds the Next data cache may reuse the warning list. Recalls are
+ * published a handful of times per week; a few hours of staleness is an
+ * acceptable trade for not hitting the portal on every scan. The check is
+ * warn-only, so a stale list can only delay an extra warning — it never
+ * upgrades a verdict.
+ */
+export const LMW_REVALIDATE_S = 21600;
+
+/** How far back warnings stay part of the scan-time comparison. */
+export const LMW_WINDOW_DAYS = 180;
+
+/** Entries requested per fetch; comfortably above 180 days of warnings. */
+export const LMW_ROWS = 500;
