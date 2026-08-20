@@ -29,6 +29,15 @@ function formatDataDate(timestamp: number): string {
   }).format(new Date(timestamp * 1000));
 }
 
+/** Recall notices carry ms timestamps, unlike the OFF record's seconds. */
+function formatRecallDate(timestampMs: number): string {
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(timestampMs));
+}
+
 /**
  * Link into the Open Food Facts record. Shown wherever peaNOT tells the user
  * its data may be wrong or incomplete: the fix belongs in the database, where
@@ -132,6 +141,11 @@ export default function ResultScreen({
       ? result.message ?? copy.detail
       : copy.detail;
 
+  // Warn-only recall comparison: matches add a card, everything else stays a
+  // quiet status line — "no match" must never read as "no recall exists".
+  const recallMatches =
+    result.recall?.status === "ok" ? result.recall.matches : [];
+
   const headlineRef = useRef<HTMLParagraphElement>(null);
   const [announce, setAnnounce] = useState("");
   const [imgFailed, setImgFailed] = useState(false);
@@ -161,9 +175,13 @@ export default function ResultScreen({
   // Announce the verdict to assistive tech. Starting empty and filling in an
   // effect makes it a live-region *change*, so it is reliably spoken.
   useEffect(() => {
-    setAnnounce(`${copy.title} ${detailText}`);
+    const recallNote =
+      recallMatches.length > 0
+        ? " Achtung: Eine amtliche Rückruf-Meldung könnte dieses Produkt betreffen."
+        : "";
+    setAnnounce(`${copy.title} ${detailText}${recallNote}`);
     setImgFailed(false);
-  }, [result, copy.title, detailText]);
+  }, [result, copy.title, detailText, recallMatches.length]);
 
   // Alert the user on a hit (and on traces when strict mode is on).
   useEffect(() => {
@@ -382,6 +400,80 @@ export default function ResultScreen({
               </div>
             </div>
           </div>
+
+          {recallMatches.length > 0 ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "14px 14px 12px",
+                borderRadius: 12,
+                background: `${P.RED}0D`,
+                border: `2px solid ${P.RED}`,
+              }}
+            >
+              <Mono style={{ opacity: 0.75, color: P.RED }}>
+                amtliche warnung · lebensmittelwarnung.de
+              </Mono>
+              <div
+                style={{
+                  fontFamily: "'Fraunces', serif",
+                  fontWeight: 800,
+                  fontSize: 18,
+                  marginTop: 3,
+                  lineHeight: 1.15,
+                  color: P.RED,
+                }}
+              >
+                Rückruf könnte dieses Produkt betreffen
+              </div>
+              <div style={{ fontSize: 12.5, marginTop: 4, opacity: 0.82, lineHeight: 1.45 }}>
+                Der Abgleich läuft über den Produktnamen und kann irren. Öffne die
+                Meldung und vergleiche Produkt, Charge und Haltbarkeitsdatum mit
+                deiner Packung.
+              </div>
+              {recallMatches.map((match, i) => (
+                <div
+                  key={`${match.title}-${i}`}
+                  style={{
+                    marginTop: 10,
+                    paddingTop: 10,
+                    borderTop: `1px dashed ${P.RED}55`,
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: 13.5, lineHeight: 1.3 }}>
+                    {match.title}
+                  </div>
+                  {match.publishedDate ? (
+                    <Mono style={{ opacity: 0.6, marginTop: 2, display: "block" }}>
+                      gemeldet · {formatRecallDate(match.publishedDate)}
+                    </Mono>
+                  ) : null}
+                  {match.link ? (
+                    <a
+                      href={match.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="tap"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginTop: 6,
+                        color: P.INK,
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        textDecoration: "underline",
+                        textUnderlineOffset: 3,
+                      }}
+                    >
+                      Meldung öffnen
+                      <ExternalLink size={13} aria-hidden="true" />
+                    </a>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {identityOpen && answer === null ? (
             <div
@@ -718,6 +810,17 @@ export default function ResultScreen({
           <Mono>quelle · openfoodfacts</Mono>
           <Mono>ean · {result.barcode}</Mono>
         </div>
+        {result.recall ? (
+          <div style={{ marginTop: 4, opacity: 0.6 }}>
+            <Mono>
+              {result.recall.status === "unavailable"
+                ? "rückruf-abgleich · lebensmittelwarnung.de nicht erreichbar"
+                : recallMatches.length > 0
+                  ? "rückruf-abgleich · lebensmittelwarnung.de · treffer siehe oben"
+                  : "rückruf-abgleich · lebensmittelwarnung.de · kein namenstreffer"}
+            </Mono>
+          </div>
+        ) : null}
       </div>
 
       <div
