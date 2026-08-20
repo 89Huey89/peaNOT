@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OffFetchOutcome, OffProductFields, ProductResult } from "@/lib/types";
 
 vi.mock("@/lib/off/client", () => ({ fetchOffProduct: vi.fn() }));
+vi.mock("@/lib/recalls/check", () => ({ checkRecalls: vi.fn() }));
 
 import { GET } from "./route";
 import { fetchOffProduct } from "@/lib/off/client";
+import { checkRecalls } from "@/lib/recalls/check";
 
 function fields(partial: Partial<OffProductFields> = {}): OffProductFields {
   return {
@@ -34,6 +36,8 @@ function mockOutcome(outcome: OffFetchOutcome) {
 describe("GET /api/product/[barcode]", () => {
   beforeEach(() => {
     vi.mocked(fetchOffProduct).mockReset();
+    vi.mocked(checkRecalls).mockReset();
+    vi.mocked(checkRecalls).mockResolvedValue({ status: "ok", matches: [] });
   });
 
   afterEach(() => {
@@ -236,6 +240,70 @@ describe("GET /api/product/[barcode]", () => {
     const { body } = await call("4011200296908", ["bogus"]);
     expect(body.results?.map((r) => r.key)).toEqual(["peanut"]);
     expect(body.status).toBe("NEIN");
+  });
+
+  it("attaches recall matches to a found product", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "ültje Erdnüsse pikant gewürzt",
+      brand: "ültje",
+      imageUrl: "",
+      fields: fields({ allergens_tags: ["en:peanuts"] }),
+    });
+    vi.mocked(checkRecalls).mockResolvedValue({
+      status: "ok",
+      matches: [
+        { title: "ültje Erdnüsse pikant gewürzt, 180 Gramm", link: null, publishedDate: 1 },
+      ],
+    });
+
+    const { body } = await call("4011200296908");
+    expect(checkRecalls).toHaveBeenCalledWith("ültje Erdnüsse pikant gewürzt", "ültje");
+    expect(body.recall).toEqual({
+      status: "ok",
+      matches: [
+        { title: "ültje Erdnüsse pikant gewürzt, 180 Gramm", link: null, publishedDate: 1 },
+      ],
+    });
+  });
+
+  it("reports an unavailable recall check instead of hiding it", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "Peanut Bar",
+      brand: "ACME",
+      imageUrl: "",
+      fields: fields({ allergens_tags: ["en:peanuts"] }),
+    });
+    vi.mocked(checkRecalls).mockResolvedValue({ status: "unavailable" });
+
+    const { body } = await call("4011200296908");
+    expect(body.recall).toEqual({ status: "unavailable" });
+    expect(body.status).toBe("JA"); // the add-on never touches the verdict
+  });
+
+  it("skips the recall check when there is no name to compare", async () => {
+    mockOutcome({ kind: "not-found" });
+
+    const { body } = await call("4011200296908");
+    expect(checkRecalls).not.toHaveBeenCalled();
+    expect(body.recall).toBeUndefined();
+  });
+
+  it("skips the recall check for a nameless no-data record", async () => {
+    mockOutcome({ kind: "no-data", productName: "", brand: "", imageUrl: "" });
+
+    const { body } = await call("4011200296908");
+    expect(checkRecalls).not.toHaveBeenCalled();
+    expect(body.recall).toBeUndefined();
+  });
+
+  it("still compares recalls for a named no-data record", async () => {
+    mockOutcome({ kind: "no-data", productName: "Mystery", brand: "ACME", imageUrl: "" });
+
+    const { body } = await call("4011200296908");
+    expect(checkRecalls).toHaveBeenCalledWith("Mystery", "ACME");
+    expect(body.recall).toEqual({ status: "ok", matches: [] });
   });
 
   it("names the single selected allergen in the KEINE_DATEN message", async () => {

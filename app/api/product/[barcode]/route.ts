@@ -6,6 +6,7 @@ import { detectAllergens } from "@/lib/allergens/combine";
 import { getProfiles, type AllergenProfile } from "@/lib/allergens/profile";
 import { allergenLabels } from "@/lib/allergens/labels";
 import { detectCaveats } from "@/lib/caveats";
+import { checkRecalls } from "@/lib/recalls/check";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +53,14 @@ export async function GET(
   const profiles = parseProfiles(request.url);
   const outcome = await fetchOffProduct(barcode);
 
+  // Recall notices carry names, not barcodes, so the comparison needs the OFF
+  // record first — and is skipped entirely when there is no name to compare.
+  const recall =
+    (outcome.kind === "found" || outcome.kind === "no-data") &&
+    (outcome.productName || outcome.brand)
+      ? await checkRecalls(outcome.productName || null, outcome.brand || null)
+      : undefined;
+
   let result: ProductResult;
   switch (outcome.kind) {
     case "found": {
@@ -72,6 +81,7 @@ export async function GET(
         dataLastModified: outcome.dataLastModified,
         dataRevision: outcome.dataRevision,
         caveats: detectCaveats(barcode, detection.overall, outcome.fields),
+        ...(recall ? { recall } : {}),
       };
       break;
     }
@@ -86,6 +96,7 @@ export async function GET(
         dataLastModified: outcome.dataLastModified,
         dataRevision: outcome.dataRevision,
         caveats: detectCaveats(barcode, "KEINE_DATEN", null),
+        ...(recall ? { recall } : {}),
       };
       break;
     case "not-found":
