@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import { AppShell, Mono, SectionTitle } from "@/components/ui";
+import { useHistoryOverlay } from "@/components/useHistoryOverlay";
 import {
   PHRASE_LANGS,
   VENUES,
@@ -128,6 +129,12 @@ export default function PhraseScreen({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [present]);
+
+  // UX9: the fullscreen card is itself an overlay on top of the karte
+  // screen (which already pushes its own history entry in app/page.tsx) —
+  // pushing a second one here means one edge-swipe closes just this view,
+  // not both.
+  useHistoryOverlay(present, () => setPresent(false));
 
   // Keep the screen awake while the card is being shown to staff — a timeout
   // mid-conversation is exactly the wrong moment. Best-effort only: the Wake

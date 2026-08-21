@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ProductResult } from "@/lib/types";
 import { __clearProductLookupCache } from "@/components/useProductLookup";
@@ -30,6 +30,22 @@ import Home from "@/app/page";
 function jsonResponse(body: ProductResult) {
   return { json: async () => body, headers: new Headers() } as unknown as Response;
 }
+
+// useHistoryOverlay (UX9) pops its own pushState entry via history.back()
+// whenever an overlay closes by any means other than the back gesture
+// itself (a button tap) — jsdom fires the resulting popstate asynchronously,
+// which would otherwise leak into a *later* test's own dispatched popstate.
+// Made synchronous here, file-wide, so every test's history interactions
+// stay self-contained regardless of run order.
+beforeEach(() => {
+  vi.spyOn(window.history, "back").mockImplementation(() => {
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("Home result dialog", () => {
   beforeEach(() => {
@@ -155,5 +171,68 @@ describe("Home allergy card access (UX7)", () => {
 
     expect(screen.getByRole("heading", { name: "Verlauf" })).toBeInTheDocument();
     expect(screen.queryByText("Allergie-Karte")).not.toBeInTheDocument();
+  });
+});
+
+describe("Home browser-history integration (UX9)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    __clearProductLookupCache();
+  });
+
+  it("closes the result dialog on a browser back navigation (iPhone edge-swipe)", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "NEIN",
+      }),
+    );
+
+    render(<Home />);
+    await userEvent.click(await screen.findByText("simulate detect"));
+    await screen.findByRole("dialog");
+
+    fireEvent.popState(window);
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Back on the scan screen, not navigated out of the app.
+    expect(screen.getByTestId("scan-screen-stub")).toBeInTheDocument();
+  });
+
+  it("closes the allergy card on a browser back navigation, returning to the tab it was opened from", async () => {
+    render(<Home />);
+
+    await userEvent.click(await screen.findByText("goto verlauf"));
+    await userEvent.click(await screen.findByRole("button", { name: "Allergie-Karte öffnen" }));
+    expect(await screen.findByText("Allergie-Karte")).toBeInTheDocument();
+
+    fireEvent.popState(window);
+
+    expect(screen.getByRole("heading", { name: "Verlauf" })).toBeInTheDocument();
+    expect(screen.queryByText("Allergie-Karte")).not.toBeInTheDocument();
+  });
+
+  it("does nothing on a browser back navigation when no overlay is open (base-state guard)", async () => {
+    render(<Home />);
+    await screen.findByText("simulate detect");
+
+    expect(() => fireEvent.popState(window)).not.toThrow();
+    expect(screen.getByTestId("scan-screen-stub")).toBeInTheDocument();
   });
 });

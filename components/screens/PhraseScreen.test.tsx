@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import PhraseScreen from "@/components/screens/PhraseScreen";
 import { phraseFor } from "@/lib/phrases";
@@ -48,6 +48,18 @@ function stubWakeLock(sentinel: ReturnType<typeof makeSentinel>) {
   return request;
 }
 
+beforeEach(() => {
+  // useHistoryOverlay (UX9) pops its own pushState entry via history.back()
+  // whenever the fullscreen view closes by any means other than the back
+  // gesture itself (Schließen/Escape) — jsdom fires the resulting popstate
+  // asynchronously, which would otherwise leak into a *later* test's own
+  // dispatched popstate. Made synchronous here so every test's history
+  // interactions stay fully self-contained.
+  vi.spyOn(window.history, "back").mockImplementation(() => {
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+});
+
 afterEach(() => {
   Reflect.deleteProperty(navigator, "wakeLock");
   vi.restoreAllMocks();
@@ -76,6 +88,19 @@ describe("PhraseScreen fullscreen view (UX4)", () => {
     fireEvent.keyDown(window, { key: "Escape" });
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("closes on a browser back navigation, i.e. the iPhone edge-swipe gesture (UX9)", () => {
+    const { onBack } = renderScreen();
+    openFullscreen();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.popState(window);
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Only the fullscreen overlay closes — the karte screen underneath it
+    // (its own history entry, pushed one level up in app/page.tsx) stays put.
+    expect(onBack).not.toHaveBeenCalled();
   });
 
   it("renders the sentence as plain readable text, with no aria-label overriding it", () => {

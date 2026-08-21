@@ -12,20 +12,14 @@ import ManualEntry from "@/components/ManualEntry";
 import ProductSearch from "@/components/ProductSearch";
 import { verdictGlyph } from "@/lib/verdict";
 import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { IdCard, Keyboard, Languages, Search } from "lucide-react";
+import { IdCard, Keyboard, Languages, Search, X } from "lucide-react";
 
 const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
   ssr: false,
   loading: () => <p className="scanner__hint">Kamera wird geladen…</p>,
 });
 
-function scrollPanelIntoView(el: HTMLElement | null): void {
-  if (!el) return;
-  const reduce =
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  el.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
-}
+type EntrySheet = "manual" | "search" | null;
 
 export default function ScanScreen({
   P,
@@ -50,24 +44,54 @@ export default function ScanScreen({
   onOpenCard: () => void;
   onTab: (t: Tab) => void;
 }) {
-  const [manualOpen, setManualOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const manualPanelRef = useRef<HTMLDivElement>(null);
-  const searchPanelRef = useRef<HTMLDivElement>(null);
+  // UX8: manual entry and search share one bottom sheet slot — opening one
+  // replaces the other rather than stacking both over the scanner.
+  const [sheet, setSheet] = useState<EntrySheet>(null);
+  const sheetOpen = sheet !== null;
   const online = useOnlineStatus();
+  // Whichever toggle button was tapped to open (or last switch) the sheet —
+  // captured on click, *before* ManualEntry's/ProductSearch's own autoFocus
+  // grabs focus during the same commit (too early for an effect here to
+  // still see it on document.activeElement).
+  const openerRef = useRef<HTMLElement | null>(null);
 
-  // Bring a just-opened panel into view so its form isn't left below the fold.
+  function toggleSheet(kind: "manual" | "search") {
+    openerRef.current = document.activeElement as HTMLElement | null;
+    setSheet((s) => (s === kind ? null : kind));
+  }
+
+  // Restore focus to whatever opened the sheet once it closes, by any means
+  // (Schließen, scrim tap, Escape) — mirrors ResultScreen's/PhraseScreen's
+  // dialog pattern. Reads openerRef fresh in the cleanup (not up front) so
+  // switching manual<->search without closing still restores to the most
+  // recent opener, not a stale one from the first open.
   useEffect(() => {
-    if (!manualOpen) return;
-    scrollPanelIntoView(manualPanelRef.current);
-  }, [manualOpen]);
+    if (!sheetOpen) return;
+    return () => {
+      const opener = openerRef.current;
+      if (opener?.isConnected && typeof opener.focus === "function") {
+        opener.focus();
+      }
+    };
+  }, [sheetOpen]);
+
+  // Escape closes the sheet, mirroring the ✕ button.
   useEffect(() => {
-    if (!searchOpen) return;
-    scrollPanelIntoView(searchPanelRef.current);
-  }, [searchOpen]);
+    if (!sheetOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSheet(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sheetOpen]);
 
   return (
     <AppShell P={P}>
+      {/* inert freezes focus/AT navigation and pointer events behind the
+          sheet's scrim while it's open — same rationale as app/page.tsx's
+          wrapping around ScanScreen itself. display:contents keeps the
+          wrapper out of AppShell's flex layout. */}
+      <div inert={sheetOpen || undefined} style={{ display: "contents" }}>
       <TopBar
         P={P}
         right={
@@ -132,8 +156,8 @@ export default function ScanScreen({
         <button
           type="button"
           className="tap"
-          onClick={() => setManualOpen((o) => !o)}
-          aria-expanded={manualOpen}
+          onClick={() => toggleSheet("manual")}
+          aria-expanded={sheet === "manual"}
           aria-controls="manual-entry-panel"
           style={{
             width: "100%",
@@ -151,17 +175,11 @@ export default function ScanScreen({
           <Keyboard size={15} aria-hidden="true" /> &nbsp;Barcode manuell eingeben
         </button>
 
-        {manualOpen ? (
-          <div id="manual-entry-panel" ref={manualPanelRef} style={{ marginTop: 12 }}>
-            <ManualEntry onSubmit={onDetected} disabled={loading} />
-          </div>
-        ) : null}
-
         <button
           type="button"
           className="tap"
-          onClick={() => setSearchOpen((o) => !o)}
-          aria-expanded={searchOpen}
+          onClick={() => toggleSheet("search")}
+          aria-expanded={sheet === "search"}
           aria-controls="product-search-panel"
           style={{
             width: "100%",
@@ -178,12 +196,6 @@ export default function ScanScreen({
         >
           <Search size={15} aria-hidden="true" /> &nbsp;Nach Name suchen
         </button>
-
-        {searchOpen ? (
-          <div id="product-search-panel" ref={searchPanelRef} style={{ marginTop: 12 }}>
-            <ProductSearch P={P} onSelect={onDetected} disabled={loading} />
-          </div>
-        ) : null}
 
         <button
           type="button"
@@ -317,6 +329,93 @@ export default function ScanScreen({
       </div>
 
       <TabBar P={P} tab="scan" onTab={onTab} />
+      </div>
+
+      {sheet ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={sheet === "manual" ? "Barcode manuell eingeben" : "Nach Name suchen"}
+          style={{ position: "absolute", inset: 0, zIndex: 25 }}
+        >
+          {/* Scrim: a second, purely visual dismiss target alongside the
+              explicit Schließen button below — same dual affordance every
+              modal in this app offers. */}
+          <button
+            type="button"
+            aria-label="Schließen"
+            onClick={() => setSheet(null)}
+            style={{
+              position: "absolute",
+              inset: 0,
+              border: 0,
+              padding: 0,
+              background: `${P.INK}66`,
+              cursor: "pointer",
+            }}
+          />
+          <div
+            id={sheet === "manual" ? "manual-entry-panel" : "product-search-panel"}
+            className="result-in"
+            style={{
+              position: "relative",
+              margin: "calc(10px + env(safe-area-inset-top)) 14px 0",
+              // Anchored near the top and capped short: the iOS keyboard
+              // covers roughly the bottom half of the screen once the field
+              // is focused, so this stays clear of it and results (below the
+              // field, inside the same scroll box) never end up hidden
+              // underneath the keyboard.
+              maxHeight: "45dvh",
+              display: "flex",
+              flexDirection: "column",
+              background: P.BG,
+              borderRadius: 18,
+              border: `1px solid ${P.INK}1a`,
+              boxShadow: `0 20px 50px -20px ${P.INK}, 0 4px 16px ${P.INK}33`,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                padding: "10px 10px 0",
+                flexShrink: 0,
+              }}
+            >
+              <button
+                type="button"
+                className="tap hit44"
+                onClick={() => setSheet(null)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "transparent",
+                  border: 0,
+                  color: P.DIM,
+                  fontFamily: "inherit",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                <X size={16} aria-hidden="true" /> Schließen
+              </button>
+            </div>
+            <div
+              className="scroll"
+              style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "0 16px 16px" }}
+            >
+              {sheet === "manual" ? (
+                <ManualEntry onSubmit={onDetected} disabled={loading} />
+              ) : (
+                <ProductSearch P={P} onSelect={onDetected} disabled={loading} />
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AppShell>
   );
 }

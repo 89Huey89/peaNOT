@@ -7,6 +7,7 @@ import { unlockAudio } from "@/lib/feedback";
 import { isVerdictWorsening } from "@/lib/verdict";
 import { useProductLookup } from "@/components/useProductLookup";
 import { usePrefs } from "@/components/usePrefs";
+import { useHistoryOverlay } from "@/components/useHistoryOverlay";
 import { useHistory, resolveHistoryVerdict, type HistoryEntry } from "@/components/useHistory";
 import { Logo, type Tab } from "@/components/ui";
 import OnboardingScreen from "@/components/screens/OnboardingScreen";
@@ -125,6 +126,15 @@ export default function Home() {
     return () => window.removeEventListener("online", onOnline);
   }, [route, result, runLookup]);
 
+  // UX9: opening the result dialog or the allergy card pushes a history
+  // entry, so the iPhone edge-swipe/back gesture closes that overlay
+  // instead of leaving the app mid-shop. Both routes are mutually
+  // exclusive, so at most one of these is ever actually open.
+  const resultOpen = route === "result" && !!result;
+  const karteOpen = route === "karte";
+  useHistoryOverlay(resultOpen, () => setRoute("scan"));
+  useHistoryOverlay(karteOpen, () => setRoute(cardReturnTab));
+
   if (!ready || route === null) {
     return (
       <div
@@ -190,7 +200,6 @@ export default function Home() {
   } else {
     // scan + result share a mounted ScanScreen so the camera stream stays alive;
     // the result is layered on top instead of swapping screens.
-    const resultOpen = route === "result" && !!result;
     screen = (
       <>
         {/* inert freezes focus/AT navigation and pointer events in the
