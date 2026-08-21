@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import HistoryScreen from "@/components/screens/HistoryScreen";
 import type { HistoryEntry } from "@/components/useHistory";
+import type { FavoriteEntry } from "@/lib/favorites";
 import { palette } from "@/lib/theme";
 
 const ENTRY: HistoryEntry = {
@@ -13,23 +14,26 @@ const ENTRY: HistoryEntry = {
   verdict: "safe",
 };
 
-function renderScreen(history: HistoryEntry[] = [ENTRY]) {
+function renderScreen(history: HistoryEntry[] = [ENTRY], favorites: FavoriteEntry[] = []) {
   const onRemove = vi.fn();
   const onRestore = vi.fn();
   const onOpenCard = vi.fn();
+  const onToggleFavorite = vi.fn();
   render(
     <HistoryScreen
       P={palette("mustard")}
       history={history}
+      favorites={favorites}
       onOpen={() => {}}
       onClear={() => {}}
       onRemove={onRemove}
       onRestore={onRestore}
+      onToggleFavorite={onToggleFavorite}
       onOpenCard={onOpenCard}
       onTab={() => {}}
     />,
   );
-  return { onRemove, onRestore, onOpenCard };
+  return { onRemove, onRestore, onOpenCard, onToggleFavorite };
 }
 
 describe("HistoryScreen delete undo", () => {
@@ -93,6 +97,42 @@ describe("HistoryScreen allergy card access (UX7)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Allergie-Karte öffnen" }));
 
     expect(onOpenCard).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("HistoryScreen favorite star (F2)", () => {
+  it("offers to star an entry that isn't favorited yet", () => {
+    const { onToggleFavorite } = renderScreen();
+
+    const star = screen.getByRole("button", { name: `„Reiswaffel" zu Favoriten hinzufügen` });
+    expect(star).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(star);
+
+    expect(onToggleFavorite).toHaveBeenCalledWith(ENTRY);
+  });
+
+  it("shows an entry as favorited and offers to remove it", () => {
+    const FAV: FavoriteEntry = {
+      barcode: "111",
+      name: "Reiswaffel",
+      brand: "dm Bio",
+      verdict: "safe",
+      ts: 1,
+      addedAt: 1,
+    };
+    renderScreen([ENTRY], [FAV]);
+
+    const star = screen.getByRole("button", { name: `„Reiswaffel" aus Favoriten entfernen` });
+    expect(star).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("does not remove the entry from the history list", () => {
+    const { onRemove } = renderScreen();
+
+    fireEvent.click(screen.getByRole("button", { name: `„Reiswaffel" zu Favoriten hinzufügen` }));
+
+    expect(onRemove).not.toHaveBeenCalled();
   });
 });
 

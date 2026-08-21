@@ -7,12 +7,13 @@ import { verdictColor } from "@/lib/verdict";
 import { VERDICT } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
+import type { FavoriteEntry } from "@/lib/favorites";
 import { useOnlineStatus } from "@/components/useOnlineStatus";
 import ManualEntry from "@/components/ManualEntry";
 import ProductSearch from "@/components/ProductSearch";
 import { verdictGlyph } from "@/lib/verdict";
 import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { IdCard, Keyboard, Languages, Search, X } from "lucide-react";
+import { IdCard, Keyboard, Languages, Search, Star, X } from "lucide-react";
 
 const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
   ssr: false,
@@ -28,8 +29,10 @@ export default function ScanScreen({
   haptic,
   sound,
   history,
+  favorites,
   onDetected,
   onOpen,
+  onOpenFavorite,
   onOpenCard,
   onTab,
 }: {
@@ -39,8 +42,13 @@ export default function ScanScreen({
   haptic: boolean;
   sound: boolean;
   history: HistoryEntry[];
+  /** Starred staples (F2), most recently starred first. */
+  favorites: FavoriteEntry[];
   onDetected: (barcode: string) => void;
   onOpen: (entry: HistoryEntry) => void;
+  /** Re-runs the ordinary lookup flow for a starred barcode — same as
+   * tapping a "zuletzt geprüft" card, just from the Favoriten strip. */
+  onOpenFavorite: (entry: FavoriteEntry) => void;
   onOpenCard: () => void;
   onTab: (t: Tab) => void;
 }) {
@@ -216,6 +224,93 @@ export default function ScanScreen({
         >
           <Languages size={15} aria-hidden="true" /> &nbsp;Allergie-Karte zeigen
         </button>
+
+        {favorites.length > 0 ? (
+          <div style={{ marginTop: 22 }}>
+            <Mono style={{ opacity: 0.6, display: "block", marginBottom: 8 }}>favoriten</Mono>
+            <div
+              className="scroll"
+              style={{
+                display: "flex",
+                gap: 8,
+                overflowX: "auto",
+                margin: "0 -22px",
+                padding: "0 22px",
+              }}
+            >
+              {favorites.map((f) => {
+                const fg = verdictColor(f.verdict, P);
+                return (
+                  <button
+                    key={f.barcode}
+                    type="button"
+                    className="tap"
+                    onClick={() => onOpenFavorite(f)}
+                    style={{
+                      minWidth: 148,
+                      padding: "10px 12px",
+                      background: P.PAPER,
+                      border: `1px solid ${P.ACCENT}55`,
+                      borderRadius: 12,
+                      textAlign: "left",
+                      color: "inherit",
+                      fontFamily: "inherit",
+                      cursor: "pointer",
+                      display: "block",
+                      position: "relative",
+                    }}
+                  >
+                    <Star
+                      size={13}
+                      aria-hidden="true"
+                      fill={P.ACCENT}
+                      color={P.ACCENT}
+                      style={{ position: "absolute", top: 8, right: 8 }}
+                    />
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 14,
+                          height: 14,
+                          borderRadius: 99,
+                          background: fg,
+                          color: P.FILL_TEXT,
+                          fontSize: 9,
+                          fontWeight: 800,
+                          display: "grid",
+                          placeItems: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {verdictGlyph(f.verdict)}
+                      </span>
+                      <Mono style={{ opacity: 0.7 }}>{formatRelative(f.ts)}</Mono>
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: "0.8125em",
+                        marginTop: 5,
+                        lineHeight: 1.15,
+                        textWrap: "pretty",
+                        // Leave room for the star mark in the corner.
+                        paddingRight: 16,
+                      }}
+                    >
+                      {f.name}
+                    </div>
+                    <div
+                      style={{ fontSize: "0.6875em", color: fg, fontWeight: 600, marginTop: 3 }}
+                    >
+                      {VERDICT[f.verdict].label}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         {history.length > 0 ? (
           <div style={{ marginTop: 22 }}>

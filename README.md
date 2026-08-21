@@ -162,6 +162,31 @@ Im Ergebnis lässt sich pro Barcode eine kurze eigene Notiz hinterlegen (z. B.
 informativ: Eine Notiz wird an keiner Stelle gelesen, die ein Verdict
 berechnet, und kann ein Ergebnis nie beeinflussen.
 
+### Favoriten (`lib/favorites.ts`)
+
+Der Alltag einer Allergiker-Familie besteht meist aus denselben 10–20
+Produkten. Ein Stern (Ergebnis-Kopfzeile, Verlaufszeile) merkt sich ein
+Produkt als Staple — lokal (`peanot.favorites.v1`, max. 50 Einträge,
+gleiche Machart wie `lib/notes.ts`/`lib/packmatch.ts`) mit Name, Marke,
+letztem Verdict und Prüfzeitpunkt. Die Favoriten erscheinen als eigene
+Zeile oberhalb von „Zuletzt geprüft" auf dem Scan-Screen; ein Tipp darauf
+löst den ganz normalen Prüf-Vorgang erneut aus (kein Cache-Anzeige), sodass
+sich vor dem Einkauf mit einem Tipp bestätigen lässt, dass ein Staple noch
+grün ist — kombiniert mit der Änderungs-Warnung oben genau der Fall, den das
+README selbst benennt (Rezeptur kann sich bei gleicher EAN ändern). Rein
+informativ: Der gespeicherte Verdict wird nirgends gelesen, das ein Ergebnis
+berechnet, nur nach jedem echten Check aktualisiert.
+
+### Ergebnis teilen (`lib/share.ts`)
+
+Der **„Teilen"**-Button (Ergebnis-Kopfzeile) öffnet das native Teilen-Sheet
+(`navigator.share`, z. B. AirDrop/Nachrichten) mit Produktname, Marke, EAN,
+dem Verdict-Label **inklusive** Vorbehalts-Formulierung (nie ein blankes
+„sicher") und dem Link zum Open-Food-Facts-Eintrag. Ohne Web-Share-API (oder
+bei fehlenden Zielen) landet derselbe Text stattdessen in der Zwischenablage,
+mit kurzer Bestätigung auf dem Screen — derselbe Zwei-Stufen-Fallback wie
+beim Export (F1).
+
 ### Export & Import (`lib/backup.ts`)
 
 Da alle Daten nur lokal liegen, ersetzt ein manueller Export den fehlenden
@@ -169,7 +194,9 @@ Familien-Sync: **„Exportieren"** (Profil → Daten) baut eine JSON-Datei aus
 Verlauf, Notizen, Packungs-Antworten und Einstellungen
 (`{format:"peanot-export", v:1, …}`) und übergibt sie per Web-Share-Sheet
 (z. B. AirDrop aufs zweite Familien-Handy) oder, falls nicht verfügbar, als
-Direkt-Download.
+Direkt-Download. Favoriten (`peanot.favorites.v1`) sind (noch) nicht Teil
+dieser Datei — sie leben aktuell nur auf dem Gerät, auf dem sie angelegt
+wurden.
 
 **„Importieren"** liest eine solche Datei und **merged** statt zu
 überschreiben:
@@ -197,16 +224,19 @@ localStorage/DOM testbar (`lib/backup.test.ts`).
 - `lib/recalls/` – Client für lebensmittelwarnung.de, namensbasierter
   Rückruf-Abgleich (warn-only) und `checkRecalls`-Fassade für die Route.
 - `lib/theme.ts`, `lib/verdict.ts`, `lib/time.ts` – Palette, Status→Verdict-Mapping, relative Zeiten.
-- `lib/packmatch.ts`, `lib/notes.ts` – lokale Per-Barcode-Stores (Gegencheck-Antwort
-  bzw. Notiz), gleiche Machart (localStorage, Cap, defensives Parsen).
+- `lib/packmatch.ts`, `lib/notes.ts`, `lib/favorites.ts` – lokale Stores
+  (Gegencheck-Antwort, Notiz bzw. Favorit), gleiche Machart (localStorage,
+  Cap, defensives Parsen).
+- `lib/share.ts` – reiner Text-Baustein für „Teilen" (F6), aus den bereits
+  auf dem Ergebnis-Screen angezeigten Strings zusammengesetzt.
 - `lib/backup.ts` – reine Parse-/Merge-Logik für Export/Import (F1); die
   eigentlichen localStorage-Zugriffe bleiben bei den Stores, die sie schon
   besitzen (`components/useHistory.ts`, `lib/packmatch.ts`, `lib/notes.ts`).
 - `app/api/product/[barcode]/route.ts` – API-Route, komponiert Client + Erkennung.
 - `app/page.tsx` – Client-Router über die Screens.
 - `components/` – `BarcodeScanner` (@zxing/browser), `ManualEntry`, geteilte
-  UI-Atome (`ui.tsx`), `useHistory`/`usePrefs`/`useNote` (localStorage),
-  `useBackup` (Export/Import-Orchestrierung) und `screens/`.
+  UI-Atome (`ui.tsx`), `useHistory`/`usePrefs`/`useNote`/`useFavorites`
+  (localStorage), `useBackup` (Export/Import-Orchestrierung) und `screens/`.
 
 ## Deployment (Vercel Hobby)
 

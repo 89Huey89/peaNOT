@@ -9,6 +9,7 @@ import { useProductLookup } from "@/components/useProductLookup";
 import { usePrefs } from "@/components/usePrefs";
 import { useHistoryOverlay } from "@/components/useHistoryOverlay";
 import { useHistory, resolveHistoryVerdict, type HistoryEntry } from "@/components/useHistory";
+import { useFavorites } from "@/components/useFavorites";
 import { useBackup } from "@/components/useBackup";
 import { Logo, type Tab } from "@/components/ui";
 import OnboardingScreen from "@/components/screens/OnboardingScreen";
@@ -31,6 +32,12 @@ export default function Home() {
     importEntries,
     ready: historyReady,
   } = useHistory();
+  const {
+    favorites,
+    toggleFavorite,
+    recordCheck: recordFavoriteCheck,
+    ready: favoritesReady,
+  } = useFavorites();
   const { loading, result, lookup } = useProductLookup();
   const { exportData, importData } = useBackup({ history, importHistory: importEntries, prefs });
 
@@ -59,7 +66,7 @@ export default function Home() {
   const mode = prefs.theme === "system" ? (systemDark ? "dark" : "light") : prefs.theme;
   const P = palette(prefs.accent, mode);
   const fontScale = FONT_SCALE_FACTOR[prefs.fontScale];
-  const ready = prefsReady && historyReady;
+  const ready = prefsReady && historyReady && favoritesReady;
 
   // Color the area around the app column (and behind safe-area insets).
   useEffect(() => {
@@ -101,24 +108,31 @@ export default function Home() {
       const previous = history.find((h) => h.barcode === barcode) ?? null;
       const r = await lookup(barcode, prefs.selectedAllergens, opts);
       if (r) {
+        const verdict = resolveHistoryVerdict(r);
         // Compare against the prior scan of this exact barcode before record()
         // can dedupe it away — the classic allergy-accident case is "that was
         // safe last time", so a real worsening gets a prominent warning
         // instead of relying on a stressed parent's memory.
         const worsened =
-          previous && isVerdictWorsening(previous.verdict, resolveHistoryVerdict(r))
-            ? previous
-            : null;
+          previous && isVerdictWorsening(previous.verdict, verdict) ? previous : null;
         record(r);
+        // F2: if this barcode is a starred staple, its star only ever shows
+        // the latest real check — never the verdict from the moment it was
+        // favorited. No-op when it isn't (or is no longer) favorited.
+        recordFavoriteCheck(barcode, verdict, Date.now());
         setLastKnown(previous);
         setWorsenedFrom(worsened);
         setRoute("result");
       }
     },
-    [lookup, record, prefs.selectedAllergens, history],
+    [lookup, record, recordFavoriteCheck, prefs.selectedAllergens, history],
   );
 
   const openEntry = useCallback((entry: HistoryEntry) => runLookup(entry.barcode), [runLookup]);
+  const openFavorite = useCallback(
+    (entry: { barcode: string }) => runLookup(entry.barcode),
+    [runLookup],
+  );
 
   const openCard = useCallback((from: Tab) => {
     setCardReturnTab(from);
@@ -175,10 +189,12 @@ export default function Home() {
       <HistoryScreen
         P={P}
         history={history}
+        favorites={favorites}
         onOpen={openEntry}
         onClear={clear}
         onRemove={remove}
         onRestore={restore}
+        onToggleFavorite={toggleFavorite}
         onOpenCard={() => openCard("verlauf")}
         onTab={(t: Tab) => setRoute(t)}
       />
@@ -228,8 +244,10 @@ export default function Home() {
             haptic={prefs.haptic}
             sound={prefs.sound}
             history={history}
+            favorites={favorites}
             onDetected={runLookup}
             onOpen={openEntry}
+            onOpenFavorite={openFavorite}
             onOpenCard={() => openCard("scan")}
             onTab={(t: Tab) => setRoute(t)}
           />
@@ -250,6 +268,16 @@ export default function Home() {
               haptic={prefs.haptic}
               sound={prefs.sound}
               loading={loading}
+              isFavorite={favorites.some((f) => f.barcode === result.barcode)}
+              onToggleFavorite={() =>
+                toggleFavorite({
+                  barcode: result.barcode,
+                  name: result.productName ?? "Unbekanntes Produkt",
+                  brand: result.brand ?? "—",
+                  verdict: resolveHistoryVerdict(result),
+                  ts: Date.now(),
+                })
+              }
               onBack={() => setRoute("scan")}
               onScanAgain={() => setRoute("scan")}
               onRetry={() => runLookup(result.barcode, { fresh: true })}

@@ -12,8 +12,16 @@ vi.mock("@/components/BarcodeScanner", () => ({
   default: () => <div data-testid="barcode-scanner-stub" />,
 }));
 
-function renderScreen() {
+function renderScreen(favorites: Array<{
+  barcode: string;
+  name: string;
+  brand: string;
+  verdict: "safe" | "danger" | "trace" | "partial" | "unknown";
+  ts: number;
+  addedAt: number;
+}> = []) {
   const onDetected = vi.fn();
+  const onOpenFavorite = vi.fn();
   const { container } = render(
     <ScanScreen
       P={palette("mustard")}
@@ -22,13 +30,15 @@ function renderScreen() {
       haptic={false}
       sound={false}
       history={[]}
+      favorites={favorites}
       onDetected={onDetected}
       onOpen={vi.fn()}
+      onOpenFavorite={onOpenFavorite}
       onOpenCard={vi.fn()}
       onTab={vi.fn()}
     />,
   );
-  return { onDetected, container };
+  return { onDetected, onOpenFavorite, container };
 }
 
 async function openManual() {
@@ -136,5 +146,35 @@ describe("ScanScreen entry sheet (UX8)", () => {
     const inertWrapper = container.querySelector("[inert]");
     expect(inertWrapper).not.toBeNull();
     expect(inertWrapper?.contains(scannerStub)).toBe(true);
+  });
+});
+
+describe("ScanScreen Favoriten strip (F2)", () => {
+  it("shows nothing when there are no favorites", () => {
+    renderScreen([]);
+
+    expect(screen.queryByText("favoriten")).not.toBeInTheDocument();
+  });
+
+  it("lists a starred staple and re-checks it on tap", async () => {
+    const { onOpenFavorite } = renderScreen([
+      {
+        barcode: "20137946",
+        name: "Reiswaffel",
+        brand: "dm Bio",
+        verdict: "safe",
+        ts: Date.now(),
+        addedAt: Date.now(),
+      },
+    ]);
+
+    expect(screen.getByText("favoriten")).toBeInTheDocument();
+    expect(screen.getByText("Reiswaffel")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Reiswaffel"));
+
+    expect(onOpenFavorite).toHaveBeenCalledWith(
+      expect.objectContaining({ barcode: "20137946" }),
+    );
   });
 });

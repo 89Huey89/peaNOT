@@ -5,9 +5,10 @@ import type { Palette } from "@/lib/theme";
 import { VERDICT, verdictColor, verdictGlyph, type Verdict } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
+import type { FavoriteEntry } from "@/lib/favorites";
 import { readNote } from "@/lib/notes";
 import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { IdCard, StickyNote, X } from "lucide-react";
+import { IdCard, Star, StickyNote, X } from "lucide-react";
 
 const FILTERS: { label: string; verdict: Verdict | null }[] = [
   { label: "Alle", verdict: null },
@@ -69,19 +70,25 @@ function FilterChip({
 export default function HistoryScreen({
   P,
   history,
+  favorites,
   onOpen,
   onClear,
   onRemove,
   onRestore,
+  onToggleFavorite,
   onOpenCard,
   onTab,
 }: {
   P: Palette;
   history: HistoryEntry[];
+  /** Starred staples (F2) — only their barcodes matter here, to render the
+   * star filled on the rows that are already favorited. */
+  favorites: FavoriteEntry[];
   onOpen: (entry: HistoryEntry) => void;
   onClear: () => void;
   onRemove: (id: string) => void;
   onRestore: (entry: HistoryEntry) => void;
+  onToggleFavorite: (entry: HistoryEntry) => void;
   onOpenCard: () => void;
   onTab: (t: Tab) => void;
 }) {
@@ -113,6 +120,11 @@ export default function HistoryScreen({
     onRestore(pendingUndo);
     setPendingUndo(null);
   }
+
+  const favoriteBarcodes = useMemo(
+    () => new Set(favorites.map((f) => f.barcode)),
+    [favorites],
+  );
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -339,6 +351,32 @@ export default function HistoryScreen({
                       </div>
                     ) : null}
                   </div>
+                </button>
+                <button
+                  type="button"
+                  className="tap hit44"
+                  onClick={() => onToggleFavorite(h)}
+                  aria-pressed={favoriteBarcodes.has(h.barcode)}
+                  aria-label={
+                    favoriteBarcodes.has(h.barcode)
+                      ? `„${h.name}" aus Favoriten entfernen`
+                      : `„${h.name}" zu Favoriten hinzufügen`
+                  }
+                  style={{
+                    background: "transparent",
+                    border: 0,
+                    color: favoriteBarcodes.has(h.barcode) ? P.ACCENT : P.DIM,
+                    lineHeight: 1,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Star
+                    size={16}
+                    aria-hidden="true"
+                    fill={favoriteBarcodes.has(h.barcode) ? P.ACCENT : "none"}
+                  />
                 </button>
                 <button
                   type="button"

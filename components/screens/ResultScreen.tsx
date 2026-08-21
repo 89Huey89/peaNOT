@@ -14,8 +14,19 @@ import { getProfiles, type AllergenProfile } from "@/lib/allergens/profile";
 import { beep, vibrate } from "@/lib/feedback";
 import { formatRelative, isDataStale } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
-import { AppShell, Chip, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
-import { AlertTriangle, ArrowRight, ExternalLink, Pencil, RotateCcw, WifiOff, X } from "lucide-react";
+import { buildShareText } from "@/lib/share";
+import { AppShell, Chip, IconButton, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
+import {
+  AlertTriangle,
+  ArrowRight,
+  ExternalLink,
+  Pencil,
+  RotateCcw,
+  Share,
+  Star,
+  WifiOff,
+  X,
+} from "lucide-react";
 
 function shortEan(ean: string): string {
   return ean.length > 8 ? `${ean.slice(0, 4)}…${ean.slice(-4)}` : ean;
@@ -149,6 +160,8 @@ export default function ResultScreen({
   haptic,
   sound,
   loading,
+  isFavorite,
+  onToggleFavorite,
   onBack,
   onScanAgain,
   onRetry,
@@ -166,6 +179,9 @@ export default function ResultScreen({
   haptic: boolean;
   sound: boolean;
   loading: boolean;
+  /** F2: whether this barcode is currently starred as a staple. */
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
   onBack: () => void;
   onScanAgain: () => void;
   onRetry: () => void;
@@ -177,6 +193,15 @@ export default function ResultScreen({
   const { note, notedAt, saveNote } = useNote(result.barcode);
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
+  // F6: brief "kopiert" confirmation for the clipboard fallback (no native
+  // share sheet available) — see handleShare below.
+  const [shareNotice, setShareNotice] = useState(false);
+  const shareNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (shareNoticeTimer.current) clearTimeout(shareNoticeTimer.current);
+    };
+  }, []);
   const resolved = applyPackMatch(result.status, caveats, answer);
   const verdict = resolveVerdict(resolved.status, resolved.caveats);
   const profiles = getProfiles(selectedAllergens);
@@ -214,6 +239,18 @@ export default function ResultScreen({
   // not-found/no-data) — see unknownCardCopy for the reasoning.
   const unknownCard = isUnknown && !mismatch ? unknownCardCopy(result, profiles) : null;
   const headlineText = unknownCard?.network ? "Gerade keine Verbindung." : copy.headline;
+
+  // F6: mirrors exactly what's already on screen — the verdict label plus
+  // its detail line, which for "partial" already carries the caveat wording
+  // and for a mismatch/network case already carries that correction — so a
+  // shared message can never read safer than the app itself says.
+  const shareText = buildShareText({
+    productName: result.productName,
+    brand: result.brand,
+    barcode: result.barcode,
+    label: copy.label,
+    detail: `${detailText}${strictTraceHit ? " Im Strikt-Modus wie ein Treffer behandelt." : ""}`,
+  });
 
   // Warn-only recall comparison: matches add a card, everything else stays a
   // quiet status line — "no match" must never read as "no recall exists".
@@ -316,26 +353,79 @@ export default function ResultScreen({
     setEditingNote(false);
   }
 
+  // F6: navigator.share opens the native sheet (AirDrop/Nachrichten/Mail on
+  // iOS); when it isn't available (or the OS itself has no share targets),
+  // fall back to the clipboard with a brief on-screen confirmation — the
+  // same two-step pattern lib/backup.ts/useBackup.ts already uses for F1.
+  async function handleShare() {
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({ text: shareText });
+        return;
+      } catch (err) {
+        // AbortError: the user dismissed the share sheet themselves — leave
+        // it at that instead of surprising them with a clipboard fallback.
+        if (err instanceof Error && err.name === "AbortError") return;
+        // Any other failure falls through to the clipboard fallback below.
+      }
+    }
+    // Guard the call itself (not just try/catch it): navigator.clipboard?.
+    // writeText(...) would otherwise short-circuit to `undefined` when the
+    // API is missing, which resolves without throwing — that would show the
+    // "kopiert" confirmation even though nothing was actually copied.
+    if (typeof navigator !== "undefined" && typeof navigator.clipboard?.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(shareText);
+        setShareNotice(true);
+        if (shareNoticeTimer.current) clearTimeout(shareNoticeTimer.current);
+        shareNoticeTimer.current = setTimeout(() => setShareNotice(false), 2500);
+      } catch {
+        /* clipboard write refused (e.g. permission) – nothing more we can do here */
+      }
+    }
+  }
+
   return (
     <AppShell P={P}>
       <TopBar
         P={P}
         right={
-          <button
-            type="button"
-            className="tap hit44"
-            onClick={onBack}
-            style={{
-              background: "transparent",
-              border: 0,
-              color: P.INK,
-              fontFamily: "inherit",
-              fontSize: 13.5,
-              fontWeight: 600,
-            }}
-          >
-            <X size={14} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 4 }} />Schließen
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <IconButton
+              P={P}
+              icon={
+                <Star
+                  size={18}
+                  aria-hidden="true"
+                  fill={isFavorite ? P.ACCENT : "none"}
+                  color={isFavorite ? P.ACCENT : undefined}
+                />
+              }
+              label={isFavorite ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen"}
+              onClick={onToggleFavorite}
+            />
+            <IconButton
+              P={P}
+              icon={<Share size={18} aria-hidden="true" />}
+              label="Ergebnis teilen"
+              onClick={handleShare}
+            />
+            <button
+              type="button"
+              className="tap hit44"
+              onClick={onBack}
+              style={{
+                background: "transparent",
+                border: 0,
+                color: P.INK,
+                fontFamily: "inherit",
+                fontSize: 13.5,
+                fontWeight: 600,
+              }}
+            >
+              <X size={14} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 4 }} />Schließen
+            </button>
+          </div>
         }
       />
 
@@ -345,6 +435,29 @@ export default function ResultScreen({
       <p className="sr-only" aria-live="assertive">
         {announce}
       </p>
+
+      {shareNotice ? (
+        <div
+          role="status"
+          style={{
+            position: "absolute",
+            left: 16,
+            right: 16,
+            top: "calc(54px + env(safe-area-inset-top))",
+            zIndex: 20,
+            padding: "10px 14px",
+            borderRadius: 12,
+            background: P.INK,
+            color: P.BG,
+            fontSize: 13,
+            fontWeight: 600,
+            textAlign: "center",
+            boxShadow: `0 12px 32px -14px ${P.INK}, 0 2px 8px ${P.INK}33`,
+          }}
+        >
+          In die Zwischenablage kopiert.
+        </div>
+      ) : null}
 
       <div
         className="scroll result-in"

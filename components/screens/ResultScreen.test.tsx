@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ResultScreen from "@/components/screens/ResultScreen";
 import type { ProductResult } from "@/lib/types";
 import type { HistoryEntry } from "@/components/useHistory";
@@ -20,7 +20,12 @@ const CLEAN_RESULT: ProductResult = {
 function renderResult(
   result: ProductResult = CLEAN_RESULT,
   lastKnown: HistoryEntry | null = null,
-  opts: { worsenedFrom?: HistoryEntry | null; tracesStrict?: boolean } = {},
+  opts: {
+    worsenedFrom?: HistoryEntry | null;
+    tracesStrict?: boolean;
+    isFavorite?: boolean;
+    onToggleFavorite?: () => void;
+  } = {},
 ) {
   render(
     <ResultScreen
@@ -33,6 +38,8 @@ function renderResult(
       haptic={false}
       sound={false}
       loading={false}
+      isFavorite={opts.isFavorite ?? false}
+      onToggleFavorite={opts.onToggleFavorite ?? (() => {})}
       onBack={() => {}}
       onScanAgain={() => {}}
       onRetry={() => {}}
@@ -559,5 +566,114 @@ describe("ResultScreen personal note (F5)", () => {
 
     expect(screen.queryByText("verworfen")).not.toBeInTheDocument();
     expect(readNote("20137946")).toBeNull();
+  });
+});
+
+describe("ResultScreen favorite star (F2)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("offers to star when not yet a favorite", () => {
+    renderResult();
+
+    expect(
+      screen.getByRole("button", { name: "Zu Favoriten hinzufügen" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers to un-star an already-favorited result and calls back on tap", () => {
+    const onToggleFavorite = vi.fn();
+    renderResult(CLEAN_RESULT, null, { isFavorite: true, onToggleFavorite });
+
+    fireEvent.click(screen.getByRole("button", { name: "Aus Favoriten entfernen" }));
+
+    expect(onToggleFavorite).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ResultScreen share (F6)", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "share");
+    Reflect.deleteProperty(navigator, "clipboard");
+    vi.restoreAllMocks();
+  });
+
+  it("shares product, EAN, verdict label with its caveat wording, and the OFF link via Web Share", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    renderResult();
+    fireEvent.click(screen.getByRole("button", { name: "Ergebnis teilen" }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    const text = (share.mock.calls[0]![0] as ShareData).text as string;
+    expect(text).toContain("Gelatelli mini mix fruit");
+    expect(text).toContain("Gelatelli");
+    expect(text).toContain("EAN 20137946");
+    // "partial" verdict: the label alone never appears without its caveat.
+    expect(text).toContain("Vorbehalt");
+    expect(text).toContain("Handels-Eigencode");
+    expect(text).toContain("https://world.openfoodfacts.org/product/20137946");
+  });
+
+  it("respects a user-cancelled share sheet instead of falling back to the clipboard", async () => {
+    const share = vi.fn().mockImplementation(async () => {
+      const err = new Error("cancelled");
+      err.name = "AbortError";
+      throw err;
+    });
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+    const writeText = vi.fn();
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+
+    renderResult();
+    fireEvent.click(screen.getByRole("button", { name: "Ergebnis teilen" }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the clipboard with a brief confirmation when Web Share is unavailable", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+
+    renderResult();
+    fireEvent.click(screen.getByRole("button", { name: "Ergebnis teilen" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(writeText.mock.calls[0]![0]).toContain("EAN 20137946");
+    expect(await screen.findByText("In die Zwischenablage kopiert.")).toBeInTheDocument();
+  });
+
+  it("shows no false confirmation when neither Web Share nor the clipboard API exists", async () => {
+    renderResult();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ergebnis teilen" }));
+
+    // Give any (non-existent) async work a tick to settle, then confirm the
+    // "kopiert" toast never appears — nothing was actually copied.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText("In die Zwischenablage kopiert.")).not.toBeInTheDocument();
+  });
+
+  it("carries a fail-safe framing for a real hit, never a bare 'sicher'", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    renderResult({
+      barcode: "20137946",
+      productName: "Erdnuss-Riegel",
+      brand: "ACME",
+      status: "JA",
+      ingredients: "Erdnüsse",
+      found: "Erdnüsse",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Ergebnis teilen" }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    const text = (share.mock.calls[0]![0] as ShareData).text as string;
+    expect(text).toContain("Erdnuss enthalten");
+    expect(text).not.toMatch(/\bsicher\b/i);
   });
 });
