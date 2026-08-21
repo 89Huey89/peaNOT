@@ -18,8 +18,9 @@ import ResultScreen from "@/components/screens/ResultScreen";
 import HistoryScreen from "@/components/screens/HistoryScreen";
 import ProfileScreen from "@/components/screens/ProfileScreen";
 import PhraseScreen from "@/components/screens/PhraseScreen";
+import EmergencyScreen from "@/components/screens/EmergencyScreen";
 
-type Route = "onboarding" | "scan" | "verlauf" | "profil" | "result" | "karte";
+type Route = "onboarding" | "scan" | "verlauf" | "profil" | "result" | "karte" | "notfall";
 
 export default function Home() {
   const { prefs, setPref, importPrefs, ready: prefsReady } = usePrefs();
@@ -48,6 +49,8 @@ export default function Home() {
   // Scan/Verlauf/Profil now, not just Scan), so "Zurück" returns there
   // instead of always landing back on Scan.
   const [cardReturnTab, setCardReturnTab] = useState<Tab>("scan");
+  // Same idea for the Notfallplan (F4) — reachable from Scan and Profil.
+  const [notfallReturnTab, setNotfallReturnTab] = useState<Tab>("scan");
   // The barcode's prior history entry, set only when the fresh result is a
   // proven *worsening* vs. that entry (see isVerdictWorsening) — informational,
   // it never touches the verdict itself.
@@ -138,6 +141,10 @@ export default function Home() {
     setCardReturnTab(from);
     setRoute("karte");
   }, []);
+  const openNotfall = useCallback((from: Tab) => {
+    setNotfallReturnTab(from);
+    setRoute("notfall");
+  }, []);
 
   // If a network-error result is on screen when connectivity returns, retry
   // the same barcode automatically — the household member doesn't have to
@@ -156,8 +163,10 @@ export default function Home() {
   // exclusive, so at most one of these is ever actually open.
   const resultOpen = route === "result" && !!result;
   const karteOpen = route === "karte";
+  const notfallOpen = route === "notfall";
   useHistoryOverlay(resultOpen, () => setRoute("scan"));
   useHistoryOverlay(karteOpen, () => setRoute(cardReturnTab));
+  useHistoryOverlay(notfallOpen, () => setRoute(notfallReturnTab));
 
   if (!ready || route === null) {
     return (
@@ -209,6 +218,15 @@ export default function Home() {
         onBack={() => setRoute(cardReturnTab)}
       />
     );
+  } else if (route === "notfall") {
+    screen = (
+      <EmergencyScreen
+        P={P}
+        plan={prefs.emergencyPlan}
+        onPlanChange={(plan) => setPref("emergencyPlan", plan)}
+        onBack={() => setRoute(notfallReturnTab)}
+      />
+    );
   } else if (route === "profil") {
     screen = (
       <ProfileScreen
@@ -221,6 +239,7 @@ export default function Home() {
           setRoute("onboarding");
         }}
         onOpenCard={() => openCard("profil")}
+        onOpenNotfall={() => openNotfall("profil")}
         onTab={(t: Tab) => setRoute(t)}
         onExport={exportData}
         onImportFile={importData}
@@ -249,6 +268,7 @@ export default function Home() {
             onOpen={openEntry}
             onOpenFavorite={openFavorite}
             onOpenCard={() => openCard("scan")}
+            onOpenNotfall={() => openNotfall("scan")}
             onTab={(t: Tab) => setRoute(t)}
           />
         </div>

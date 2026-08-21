@@ -99,6 +99,17 @@ zusätzlich die Marke in der Meldung auftaucht. Die Warnliste wird serverseitig
 gecacht (`LMW_REVALIDATE_S`), sodass Scans das Portal nicht pro Anfrage
 treffen.
 
+### Lese-Hilfe bei KEINE_DATEN (`lib/allergens/checklist.ts`)
+
+Bei `KEINE_DATEN` — echt fehlende Daten oder ein per Packungs-Gegencheck
+verworfener Treffer — bleibt nur die Zutatenliste in der Hand. Eine
+aufklappbare Checkliste „Diese Begriffe bedeuten Erdnuss" zeigt dafür genau
+die Wörter, nach denen peaNOT selbst sucht (`textKeywords` aus
+`lib/allergens/profile.ts`, dieselbe Liste wie in der Erkennung), aufbereitet
+und groß genug für den Abgleich mit der Packung. Kein OCR, kein eigener
+Verdict: reine Lesehilfe für die menschliche Prüfung, die die App ohnehin
+verlangt.
+
 ## Entwicklung
 
 ```bash
@@ -215,11 +226,29 @@ wurden.
 Die reinen Merge-Funktionen sind in `lib/backup.ts` gekapselt und ohne
 localStorage/DOM testbar (`lib/backup.test.ts`).
 
+### Notfallplan (`lib/emergency.ts`)
+
+Über **„Notfallplan"** (Scan-Screen, neben „Allergie-Karte zeigen", sowie
+Profil → „Für den Notfall") erreichbar: ein Anrufknopf für **112**, eine
+editierbare Schrittliste für den familieneigenen
+Adrenalin-Autoinjektor-Notfallplan und ein Freitextfeld für Medikament, Dosis
+und Notfallset-Ort. Gedacht auch für Oma, Babysitter oder die Lehrkraft, denen
+man im Ernstfall das Handy in die Hand drückt.
+
+Die Schrittliste startet mit einer allgemeinen, unverbindlichen
+Beispiel-Vorlage — bewusst keine medizinische Anweisung der App. Die Familie
+muss sie einmal **bestätigen** (unverändert übernehmen) oder **bearbeiten**
+und speichern, bevor sie als „ihr eigener Plan" gilt (`confirmed`); bis dahin
+öffnet der Screen direkt im Bearbeiten-Modus. Gespeichert wird lokal in
+`prefs.emergencyPlan` (`peanot.prefs.v1`), wie `prefs.cardNote` rein
+informativ und an keiner Stelle mit Verdict-Logik verbunden.
+
 ## Architektur
 
 - `lib/allergens/` – reine, getestete Erdnuss-Erkennung (über `AllergenProfile`
-  auf weitere Allergene erweiterbar) inkl. `labels` (Allergen-Tags → Labels) und
-  `evidence` (Erdnuss-Fundstelle im Zutatentext).
+  auf weitere Allergene erweiterbar) inkl. `labels` (Allergen-Tags → Labels),
+  `evidence` (Erdnuss-Fundstelle im Zutatentext) und `checklist` (Lese-Hilfe-
+  Begriffe je Allergen, aus denselben `textKeywords`).
 - `lib/off/` – serverseitiger Open-Food-Facts-Client (setzt User-Agent) + defensive Normalisierung.
 - `lib/recalls/` – Client für lebensmittelwarnung.de, namensbasierter
   Rückruf-Abgleich (warn-only) und `checkRecalls`-Fassade für die Route.
@@ -227,16 +256,21 @@ localStorage/DOM testbar (`lib/backup.test.ts`).
 - `lib/packmatch.ts`, `lib/notes.ts`, `lib/favorites.ts` – lokale Stores
   (Gegencheck-Antwort, Notiz bzw. Favorit), gleiche Machart (localStorage,
   Cap, defensives Parsen).
+- `lib/emergency.ts` – Default-Vorlage und Typ für den familieneigenen
+  Notfallplan (F4); gespeichert in `prefs.emergencyPlan`, nicht in einem
+  eigenen Store.
 - `lib/share.ts` – reiner Text-Baustein für „Teilen" (F6), aus den bereits
   auf dem Ergebnis-Screen angezeigten Strings zusammengesetzt.
 - `lib/backup.ts` – reine Parse-/Merge-Logik für Export/Import (F1); die
   eigentlichen localStorage-Zugriffe bleiben bei den Stores, die sie schon
   besitzen (`components/useHistory.ts`, `lib/packmatch.ts`, `lib/notes.ts`).
 - `app/api/product/[barcode]/route.ts` – API-Route, komponiert Client + Erkennung.
-- `app/page.tsx` – Client-Router über die Screens.
+- `app/page.tsx` – Client-Router über die Screens (inkl. `notfall`-Route für
+  `EmergencyScreen`).
 - `components/` – `BarcodeScanner` (@zxing/browser), `ManualEntry`, geteilte
   UI-Atome (`ui.tsx`), `useHistory`/`usePrefs`/`useNote`/`useFavorites`
-  (localStorage), `useBackup` (Export/Import-Orchestrierung) und `screens/`.
+  (localStorage), `useBackup` (Export/Import-Orchestrierung) und `screens/`
+  (inkl. `EmergencyScreen`, dem Notfallplan-Screen aus F4).
 
 ## Deployment (Vercel Hobby)
 

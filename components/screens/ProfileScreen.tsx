@@ -8,7 +8,7 @@ import type { Prefs } from "@/components/usePrefs";
 import type { ImportOutcome } from "@/components/useBackup";
 import type { ImportError } from "@/lib/backup";
 import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { Download, IdCard, RotateCcw, Upload, User } from "lucide-react";
+import { Download, IdCard, RotateCcw, Siren, Upload, User } from "lucide-react";
 
 function importErrorCopy(error: ImportError): string {
   switch (error) {
@@ -174,6 +174,7 @@ export default function ProfileScreen({
   importPrefs,
   onReplayOnboarding,
   onOpenCard,
+  onOpenNotfall,
   onTab,
   onExport,
   onImportFile,
@@ -186,6 +187,8 @@ export default function ProfileScreen({
   importPrefs: (incoming: Partial<Prefs>) => void;
   onReplayOnboarding: () => void;
   onOpenCard: () => void;
+  /** F4: opens the family's Notfallplan (112 + Adrenalin-Autoinjektor-Plan). */
+  onOpenNotfall: () => void;
   onTab: (t: Tab) => void;
   /** Builds and shares/downloads the backup file (F1) — see components/useBackup.ts. */
   onExport: () => void;
@@ -446,6 +449,36 @@ export default function ProfileScreen({
             checked={prefs.tracesStrict}
             onChange={(v) => setPref("tracesStrict", v)}
           />
+        </Section>
+
+        <Section P={P} title="Für den Notfall">
+          <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.7, lineHeight: 1.4 }}>
+            112-Anrufknopf, euer Adrenalin-Autoinjektor-Plan und wo das
+            Notfallset liegt — für euch, aber auch für Oma, Babysitter oder
+            die Lehrkraft, falls sie das Handy übernehmen.
+          </p>
+          <button
+            type="button"
+            className="tap"
+            onClick={onOpenNotfall}
+            style={{
+              width: "100%",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              background: "transparent",
+              color: P.RED,
+              border: `1.5px solid ${P.RED}55`,
+              borderRadius: 99,
+              padding: "11px 14px",
+              fontWeight: 700,
+              fontSize: 13.5,
+              fontFamily: "inherit",
+            }}
+          >
+            <Siren size={15} aria-hidden="true" /> Notfallplan öffnen
+          </button>
         </Section>
 
         <Section P={P} title="Daten">

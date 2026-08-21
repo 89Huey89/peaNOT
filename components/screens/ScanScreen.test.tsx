@@ -22,6 +22,7 @@ function renderScreen(favorites: Array<{
 }> = []) {
   const onDetected = vi.fn();
   const onOpenFavorite = vi.fn();
+  const onOpenNotfall = vi.fn();
   const { container } = render(
     <ScanScreen
       P={palette("mustard")}
@@ -35,10 +36,11 @@ function renderScreen(favorites: Array<{
       onOpen={vi.fn()}
       onOpenFavorite={onOpenFavorite}
       onOpenCard={vi.fn()}
+      onOpenNotfall={onOpenNotfall}
       onTab={vi.fn()}
     />,
   );
-  return { onDetected, onOpenFavorite, container };
+  return { onDetected, onOpenFavorite, onOpenNotfall, container };
 }
 
 async function openManual() {
@@ -146,6 +148,16 @@ describe("ScanScreen entry sheet (UX8)", () => {
     const inertWrapper = container.querySelector("[inert]");
     expect(inertWrapper).not.toBeNull();
     expect(inertWrapper?.contains(scannerStub)).toBe(true);
+  });
+});
+
+describe("ScanScreen Notfallplan entry (F4)", () => {
+  it("offers a Notfallplan button next to Allergie-Karte zeigen", async () => {
+    const { onOpenNotfall } = renderScreen();
+
+    await userEvent.click(screen.getByRole("button", { name: /Notfallplan/ }));
+
+    expect(onOpenNotfall).toHaveBeenCalled();
   });
 });
 

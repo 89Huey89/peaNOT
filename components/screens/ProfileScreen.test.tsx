@@ -22,6 +22,7 @@ function renderScreen(
   const setPref = vi.fn();
   const importPrefs = vi.fn();
   const onOpenCard = vi.fn();
+  const onOpenNotfall = vi.fn();
   const onExport = vi.fn();
   const onImportFile =
     opts.onImportFile ??
@@ -40,12 +41,13 @@ function renderScreen(
       importPrefs={importPrefs}
       onReplayOnboarding={() => {}}
       onOpenCard={onOpenCard}
+      onOpenNotfall={onOpenNotfall}
       onTab={() => {}}
       onExport={onExport}
       onImportFile={onImportFile}
     />,
   );
-  return { setPref, importPrefs, onOpenCard, onExport, onImportFile };
+  return { setPref, importPrefs, onOpenCard, onOpenNotfall, onExport, onImportFile };
 }
 
 describe("ProfileScreen allergen picker", () => {
@@ -122,6 +124,16 @@ describe("ProfileScreen allergy card access (UX7)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Allergie-Karte öffnen" }));
 
     expect(onOpenCard).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ProfileScreen Notfallplan access (F4)", () => {
+  it("opens the Notfallplan from the 'Für den Notfall' section", () => {
+    const { onOpenNotfall } = renderScreen(DEFAULT_PREFS);
+
+    fireEvent.click(screen.getByRole("button", { name: "Notfallplan öffnen" }));
+
+    expect(onOpenNotfall).toHaveBeenCalledTimes(1);
   });
 });
 

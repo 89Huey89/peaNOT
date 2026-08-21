@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Accent, ThemeMode } from "@/lib/theme";
 import type { FontScale } from "@/lib/fontScale";
+import { DEFAULT_EMERGENCY_PLAN, type EmergencyPlan } from "@/lib/emergency";
 
 const STORAGE_KEY = "peanot.prefs.v1";
 
@@ -25,6 +26,13 @@ export interface Prefs {
    * lib/phrases.ts sentences, and never fed back into them.
    */
   cardNote: string;
+  /**
+   * F4: the family's own anaphylaxis emergency plan (EmergencyScreen) — a
+   * confirmed/edited copy of DEFAULT_EMERGENCY_PLAN, never read by any
+   * verdict logic. Kept in prefs like cardNote: one per-family value, not
+   * per-product, so it needs no separate localStorage store.
+   */
+  emergencyPlan: EmergencyPlan;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -37,6 +45,7 @@ export const DEFAULT_PREFS: Prefs = {
   selectedAllergens: ["peanut"],
   fontScale: "normal",
   cardNote: "",
+  emergencyPlan: DEFAULT_EMERGENCY_PLAN,
 };
 
 function load(): Prefs {

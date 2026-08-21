@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { DEFAULT_PREFS, usePrefs } from "@/components/usePrefs";
+import { DEFAULT_EMERGENCY_STEPS } from "@/lib/emergency";
 
 const KEY = "peanot.prefs.v1";
 
@@ -86,6 +87,55 @@ describe("usePrefs cardNote (F7a)", () => {
     const { result: reloaded } = renderHook(() => usePrefs());
     await waitFor(() => expect(reloaded.current.ready).toBe(true));
     expect(reloaded.current.prefs.cardNote).toBe("Adrenalin-Pen ist im Rucksack.");
+  });
+});
+
+describe("usePrefs emergencyPlan (F4)", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("defaults to the unconfirmed default template for a new user", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    expect(result.current.prefs.emergencyPlan.confirmed).toBe(false);
+    expect(result.current.prefs.emergencyPlan.steps).toEqual([...DEFAULT_EMERGENCY_STEPS]);
+    expect(result.current.prefs.emergencyPlan.notes).toBe("");
+  });
+
+  it("persists and reloads an edited, confirmed plan", async () => {
+    const { result, rerender } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => {
+      result.current.setPref("emergencyPlan", {
+        steps: ["Adrenalin-Pen anwenden.", "112 anrufen."],
+        notes: "Jext 150 µg im Rucksack.",
+        confirmed: true,
+      });
+    });
+    rerender();
+    expect(result.current.prefs.emergencyPlan.confirmed).toBe(true);
+    expect(result.current.prefs.emergencyPlan.steps).toHaveLength(2);
+
+    const { result: reloaded } = renderHook(() => usePrefs());
+    await waitFor(() => expect(reloaded.current.ready).toBe(true));
+    expect(reloaded.current.prefs.emergencyPlan.notes).toBe("Jext 150 µg im Rucksack.");
+    expect(reloaded.current.prefs.emergencyPlan.confirmed).toBe(true);
+  });
+
+  it("keeps an old stored prefs blob (without emergencyPlan) working via the default", async () => {
+    window.localStorage.setItem(
+      "peanot.prefs.v1",
+      JSON.stringify({ accent: "clay", onboarded: true }),
+    );
+
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    expect(result.current.prefs.emergencyPlan.confirmed).toBe(false);
+    expect(result.current.prefs.emergencyPlan.steps.length).toBeGreaterThan(0);
   });
 });
 

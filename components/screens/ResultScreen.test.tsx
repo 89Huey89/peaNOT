@@ -344,6 +344,58 @@ describe("ResultScreen unknown-result copy by kind", () => {
   });
 });
 
+describe("ResultScreen F3 reading-help checklist", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  const UNKNOWN: ProductResult = {
+    barcode: "4011200296908",
+    productName: null,
+    brand: null,
+    status: "KEINE_DATEN",
+    kind: "not-found",
+    message: "Produkt nicht in der Datenbank gefunden.",
+  };
+
+  it("offers a collapsed checklist on a KEINE_DATEN result, closed by default", () => {
+    renderResult(UNKNOWN);
+
+    const toggle = screen.getByRole("button", { name: "Diese Begriffe bedeuten Erdnuss" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Erdnuss")).not.toBeInTheDocument();
+  });
+
+  it("expands to show the allergen's terms on tap", () => {
+    renderResult(UNKNOWN);
+
+    fireEvent.click(screen.getByRole("button", { name: "Diese Begriffe bedeuten Erdnuss" }));
+
+    expect(screen.getByText("Erdnuss")).toBeInTheDocument();
+    expect(screen.getByText("Arachide")).toBeInTheDocument();
+  });
+
+  it("also offers the checklist on the pack-mismatch fallback", () => {
+    window.localStorage.setItem(
+      "peanot.packmatch.v1",
+      JSON.stringify({ "20137946": { value: "mismatch", ts: 1 } }),
+    );
+    renderResult(CLEAN_RESULT);
+
+    expect(
+      screen.getByRole("button", { name: "Diese Begriffe bedeuten Erdnuss" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show the checklist for a resolved (non-unknown) verdict", () => {
+    renderResult({ ...UNKNOWN, status: "NEIN", ingredients: "Zucker, Milch" });
+
+    expect(
+      screen.queryByRole("button", { name: /Diese Begriffe bedeuten/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("ResultScreen strict-mode traces", () => {
   beforeEach(() => {
     window.localStorage.clear();

@@ -11,6 +11,7 @@ import { usePackMatch } from "@/components/usePackMatch";
 import { useNote } from "@/components/useNote";
 import { NOTE_MAX_LENGTH } from "@/lib/notes";
 import { getProfiles, type AllergenProfile } from "@/lib/allergens/profile";
+import { buildAllergenChecklist, type AllergenChecklist } from "@/lib/allergens/checklist";
 import { beep, vibrate } from "@/lib/feedback";
 import { formatRelative, isDataStale } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
@@ -19,6 +20,8 @@ import { AppShell, Chip, IconButton, Mono, Stamp, TopBar, type ChipTone } from "
 import {
   AlertTriangle,
   ArrowRight,
+  BookOpen,
+  ChevronDown,
   ExternalLink,
   Pencil,
   RotateCcw,
@@ -150,6 +153,114 @@ function unknownCardCopy(result: ProductResult, profiles: AllergenProfile[]): Un
   };
 }
 
+/**
+ * F3: a collapsible reading-help checklist for the KEINE_DATEN (and
+ * pack-mismatch) result — "these words mean <allergen>", built from the same
+ * textKeywords the detection engine matches (see lib/allergens/checklist.ts).
+ * No OCR, no verdict of its own: purely a cheat sheet for the human
+ * comparison the app is already asking for.
+ */
+function AllergenChecklistCard({
+  P,
+  checklist,
+  open,
+  onToggle,
+}: {
+  P: Palette;
+  checklist: AllergenChecklist[];
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const heading =
+    checklist.length === 1 && checklist[0]
+      ? `Diese Begriffe bedeuten ${checklist[0].label}`
+      : "Diese Begriffe bedeuten eines deiner Allergene";
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        borderRadius: 10,
+        background: `${P.INK}05`,
+        border: `1px dashed ${P.INK}33`,
+        overflow: "hidden",
+      }}
+    >
+      <button
+        type="button"
+        className="tap"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls="allergen-checklist"
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          padding: "12px 14px",
+          background: "transparent",
+          border: 0,
+          color: P.INK,
+          fontFamily: "inherit",
+          textAlign: "left",
+          cursor: "pointer",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <BookOpen size={15} aria-hidden="true" style={{ flexShrink: 0 }} />
+          <span style={{ fontWeight: 700, fontSize: 13.5 }}>{heading}</span>
+        </span>
+        <ChevronDown
+          size={16}
+          aria-hidden="true"
+          style={{
+            flexShrink: 0,
+            transform: open ? "rotate(180deg)" : "none",
+            transition: "transform .15s ease",
+          }}
+        />
+      </button>
+      {open ? (
+        <div id="allergen-checklist" style={{ padding: "0 14px 14px" }}>
+          <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.72, lineHeight: 1.4 }}>
+            Wonach du auf der Verpackung suchst — dieselben Begriffe, nach denen
+            peaNOT sonst auch sucht. Ersetzt nicht die Zutatenliste, hilft nur
+            beim Lesen.
+          </p>
+          {checklist.map((entry) => (
+            <div key={entry.key} style={{ marginBottom: 10 }}>
+              {checklist.length > 1 ? (
+                <Mono style={{ opacity: 0.6, display: "block", marginBottom: 5 }}>
+                  {entry.label}
+                </Mono>
+              ) : null}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {entry.terms.map((term) => (
+                  <span
+                    key={term}
+                    style={{
+                      padding: "7px 11px",
+                      borderRadius: 8,
+                      background: P.PAPER,
+                      border: `1px solid ${P.INK}22`,
+                      fontWeight: 700,
+                      // Large enough to hold next to the pack's own print for
+                      // a direct comparison, per the item's own requirement.
+                      fontSize: 15,
+                    }}
+                  >
+                    {term}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ResultScreen({
   P,
   result,
@@ -193,6 +304,10 @@ export default function ResultScreen({
   const { note, notedAt, saveNote } = useNote(result.barcode);
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
+  // F3: collapsed by default — the checklist is a lookup aid, not something
+  // to read on every KEINE_DATEN, so it shouldn't push the retry button down
+  // for everyone.
+  const [checklistOpen, setChecklistOpen] = useState(false);
   // F6: brief "kopiert" confirmation for the clipboard fallback (no native
   // share sheet available) — see handleShare below.
   const [shareNotice, setShareNotice] = useState(false);
@@ -212,6 +327,10 @@ export default function ResultScreen({
   const isTrace = verdict === "trace";
   const isPartial = verdict === "partial";
   const isUnknown = verdict === "unknown";
+  // F3: reading-help checklist for KEINE_DATEN (real or pack-mismatch) — see
+  // AllergenChecklistCard. Empty (and thus hidden) whenever nothing is
+  // selected, which cannot normally happen (usePrefs defaults to peanut).
+  const checklist = isUnknown ? buildAllergenChecklist(profiles) : [];
   // Strict mode treats a trace like a hit for the alarm — but the visuals
   // (stamp, frame, verdict color) used to stay amber regardless, so only the
   // small print said "wie ein Treffer". Tracked separately so the framing
@@ -1199,6 +1318,15 @@ export default function ResultScreen({
                 verifizierbar.
               </div>
             </div>
+          ) : null}
+
+          {checklist.length > 0 ? (
+            <AllergenChecklistCard
+              P={P}
+              checklist={checklist}
+              open={checklistOpen}
+              onToggle={() => setChecklistOpen((v) => !v)}
+            />
           ) : null}
 
           {unknownCard ? (

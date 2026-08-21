@@ -174,6 +174,42 @@ describe("Home allergy card access (UX7)", () => {
   });
 });
 
+describe("Home Notfallplan access (F4)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("is reachable from Profil and returns there on Zurück", async () => {
+    render(<Home />);
+
+    // ScanScreen is stubbed, so reach Profil via the real TabBar on Verlauf.
+    await userEvent.click(await screen.findByText("goto verlauf"));
+    await userEvent.click(await screen.findByRole("button", { name: "Profil" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Notfallplan öffnen" }));
+
+    expect(await screen.findByText("Notfallplan")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /112 anrufen/ })).toHaveAttribute("href", "tel:112");
+
+    await userEvent.click(screen.getByRole("button", { name: "Zurück" }));
+
+    expect(screen.getByRole("heading", { name: "Dein Profil" })).toBeInTheDocument();
+    expect(screen.queryByText("Notfallplan")).not.toBeInTheDocument();
+  });
+});
+
 describe("Home browser-history integration (UX9)", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -226,6 +262,20 @@ describe("Home browser-history integration (UX9)", () => {
 
     expect(screen.getByRole("heading", { name: "Verlauf" })).toBeInTheDocument();
     expect(screen.queryByText("Allergie-Karte")).not.toBeInTheDocument();
+  });
+
+  it("closes the Notfallplan on a browser back navigation, returning to the tab it was opened from", async () => {
+    render(<Home />);
+
+    await userEvent.click(await screen.findByText("goto verlauf"));
+    await userEvent.click(await screen.findByRole("button", { name: "Profil" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Notfallplan öffnen" }));
+    expect(await screen.findByText("Notfallplan")).toBeInTheDocument();
+
+    fireEvent.popState(window);
+
+    expect(screen.getByRole("heading", { name: "Dein Profil" })).toBeInTheDocument();
+    expect(screen.queryByText("Notfallplan")).not.toBeInTheDocument();
   });
 
   it("does nothing on a browser back navigation when no overlay is open (base-state guard)", async () => {

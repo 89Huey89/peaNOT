@@ -13,7 +13,7 @@ import ManualEntry from "@/components/ManualEntry";
 import ProductSearch from "@/components/ProductSearch";
 import { verdictGlyph } from "@/lib/verdict";
 import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { IdCard, Keyboard, Languages, Search, Star, X } from "lucide-react";
+import { IdCard, Keyboard, Languages, Search, Siren, Star, X } from "lucide-react";
 
 const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
   ssr: false,
@@ -34,6 +34,7 @@ export default function ScanScreen({
   onOpen,
   onOpenFavorite,
   onOpenCard,
+  onOpenNotfall,
   onTab,
 }: {
   P: Palette;
@@ -50,6 +51,8 @@ export default function ScanScreen({
    * tapping a "zuletzt geprüft" card, just from the Favoriten strip. */
   onOpenFavorite: (entry: FavoriteEntry) => void;
   onOpenCard: () => void;
+  /** F4: opens the family's Notfallplan (112 + Adrenalin-Autoinjektor-Plan). */
+  onOpenNotfall: () => void;
   onTab: (t: Tab) => void;
 }) {
   // UX8: manual entry and search share one bottom sheet slot — opening one
@@ -223,6 +226,29 @@ export default function ScanScreen({
           }}
         >
           <Languages size={15} aria-hidden="true" /> &nbsp;Allergie-Karte zeigen
+        </button>
+
+        {/* F4: same neighbor pill as "Allergie-Karte zeigen" above, tinted
+            red so it stays findable if someone unfamiliar with the app (a
+            babysitter, a grandparent) has to find it under stress. */}
+        <button
+          type="button"
+          className="tap"
+          onClick={onOpenNotfall}
+          style={{
+            width: "100%",
+            marginTop: 10,
+            background: "transparent",
+            color: P.RED,
+            border: `1.5px solid ${P.RED}55`,
+            borderRadius: 99,
+            padding: "11px 14px",
+            fontWeight: 600,
+            fontSize: 13.5,
+            fontFamily: "inherit",
+          }}
+        >
+          <Siren size={15} aria-hidden="true" /> &nbsp;Notfallplan
         </button>
 
         {favorites.length > 0 ? (
