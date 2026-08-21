@@ -21,10 +21,28 @@ export interface StoredAnswer {
   ts: number;
 }
 
-type Store = Record<string, StoredAnswer>;
+export type PackMatchStore = Record<string, StoredAnswer>;
+type Store = PackMatchStore;
 
 function isPackMatch(value: unknown): value is PackMatch {
   return value === "match" || value === "mismatch";
+}
+
+/**
+ * Validate an arbitrary (already-parsed) value into a well-formed
+ * pack-match store, dropping anything malformed. Shared by load() (raw
+ * localStorage) and the F1 import path (lib/backup.ts), which hands in
+ * already-parsed JSON instead of a raw string.
+ */
+export function sanitizePackMatchStore(value: unknown): Store {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  const store: Store = {};
+  for (const [barcode, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (entry === null || typeof entry !== "object") continue;
+    const { value: v, ts } = entry as { value?: unknown; ts?: unknown };
+    if (isPackMatch(v) && typeof ts === "number") store[barcode] = { value: v, ts };
+  }
+  return store;
 }
 
 function load(): Store {
@@ -32,15 +50,7 @@ function load(): Store {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const store: Store = {};
-    for (const [barcode, entry] of Object.entries(parsed as Record<string, unknown>)) {
-      if (entry === null || typeof entry !== "object") continue;
-      const { value, ts } = entry as { value?: unknown; ts?: unknown };
-      if (isPackMatch(value) && typeof ts === "number") store[barcode] = { value, ts };
-    }
-    return store;
+    return sanitizePackMatchStore(JSON.parse(raw));
   } catch {
     return {};
   }
@@ -96,6 +106,20 @@ export function writePackMatch(
   } else {
     store[barcode] = { value, ts: now };
   }
+  persist(prune(store));
+}
+
+/** The full pack-match store, for the export side of F1 (lib/backup.ts). */
+export function readAllPackMatch(): Store {
+  return load();
+}
+
+/**
+ * Replace the full pack-match store, for the import side of F1
+ * (lib/backup.ts) — the caller (mergePackMatch) has already folded in the
+ * existing entries, so this just persists (with the usual prune).
+ */
+export function writeAllPackMatch(store: Store): void {
   persist(prune(store));
 }
 

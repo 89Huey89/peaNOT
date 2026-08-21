@@ -8,12 +8,14 @@ import { CAVEATS, hasIdentityCaveat } from "@/lib/caveats";
 import { applyPackMatch } from "@/lib/packmatch";
 import { offProductUrl } from "@/lib/off/link";
 import { usePackMatch } from "@/components/usePackMatch";
+import { useNote } from "@/components/useNote";
+import { NOTE_MAX_LENGTH } from "@/lib/notes";
 import { getProfiles, type AllergenProfile } from "@/lib/allergens/profile";
 import { beep, vibrate } from "@/lib/feedback";
 import { formatRelative, isDataStale } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
 import { AppShell, Chip, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
-import { AlertTriangle, ArrowRight, ExternalLink, RotateCcw, WifiOff, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, ExternalLink, Pencil, RotateCcw, WifiOff, X } from "lucide-react";
 
 function shortEan(ean: string): string {
   return ean.length > 8 ? `${ean.slice(0, 4)}…${ean.slice(-4)}` : ean;
@@ -170,6 +172,11 @@ export default function ResultScreen({
 }) {
   const caveats = result.caveats ?? [];
   const { answer, answeredAt, answerPackMatch } = usePackMatch(result.barcode);
+  // F5: a family-only note per product — purely informational, read nowhere
+  // that resolves a verdict (see lib/notes.ts).
+  const { note, notedAt, saveNote } = useNote(result.barcode);
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
   const resolved = applyPackMatch(result.status, caveats, answer);
   const verdict = resolveVerdict(resolved.status, resolved.caveats);
   const profiles = getProfiles(selectedAllergens);
@@ -296,6 +303,18 @@ export default function ResultScreen({
   const traceOnly = (result.traces ?? []).filter(
     (t) => !(result.allergens ?? []).includes(t),
   );
+
+  function startEditNote() {
+    setNoteDraft(note ?? "");
+    setEditingNote(true);
+  }
+  function cancelEditNote() {
+    setEditingNote(false);
+  }
+  function saveNoteDraft() {
+    saveNote(noteDraft);
+    setEditingNote(false);
+  }
 
   return (
     <AppShell P={P}>
@@ -891,6 +910,130 @@ export default function ResultScreen({
               </div>
             </div>
           ) : null}
+
+          <div
+            style={{
+              marginTop: 12,
+              padding: "12px 14px",
+              borderRadius: 10,
+              background: `${P.INK}05`,
+              border: `1px dashed ${P.INK}33`,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <Mono style={{ opacity: 0.6 }}>notiz · nur für euch</Mono>
+              {!editingNote ? (
+                <button
+                  type="button"
+                  className="tap hit44"
+                  onClick={startEditNote}
+                  aria-label={note ? "Notiz bearbeiten" : "Notiz hinzufügen"}
+                  style={{
+                    background: "transparent",
+                    border: 0,
+                    color: P.INK,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <Pencil size={13} aria-hidden="true" />
+                  {note ? "Bearbeiten" : "Hinzufügen"}
+                </button>
+              ) : null}
+            </div>
+
+            {editingNote ? (
+              <div style={{ marginTop: 8 }}>
+                <textarea
+                  aria-label="Notiz zu diesem Produkt"
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value.slice(0, NOTE_MAX_LENGTH))}
+                  placeholder="z. B. Sorte Schoko okay, Crunchy nicht …"
+                  rows={3}
+                  maxLength={NOTE_MAX_LENGTH}
+                  autoFocus
+                  style={{
+                    width: "100%",
+                    resize: "vertical",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    background: P.PAPER,
+                    color: P.INK,
+                    border: `1.5px solid ${P.INK}22`,
+                    fontFamily: "inherit",
+                    // >=16px so iOS Safari doesn't zoom the page on focus.
+                    fontSize: 16,
+                    lineHeight: 1.5,
+                  }}
+                />
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="tap"
+                    onClick={saveNoteDraft}
+                    style={{
+                      flex: 1,
+                      background: P.INK,
+                      color: P.BG,
+                      border: 0,
+                      borderRadius: 99,
+                      padding: "9px 12px",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Speichern
+                  </button>
+                  <button
+                    type="button"
+                    className="tap"
+                    onClick={cancelEditNote}
+                    style={{
+                      flex: 1,
+                      background: "transparent",
+                      color: P.INK,
+                      border: `1px solid ${P.INK}33`,
+                      borderRadius: 99,
+                      padding: "9px 12px",
+                      fontWeight: 600,
+                      fontSize: 13,
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    Abbrechen
+                  </button>
+                </div>
+              </div>
+            ) : note ? (
+              <>
+                <div style={{ marginTop: 5, fontSize: 12.5, lineHeight: 1.45, textWrap: "pretty" }}>
+                  {note}
+                </div>
+                {notedAt ? (
+                  <Mono style={{ opacity: 0.5, display: "block", marginTop: 4 }}>
+                    {formatRelative(notedAt)}
+                  </Mono>
+                ) : null}
+              </>
+            ) : (
+              <p style={{ margin: "5px 0 0", fontSize: 12, opacity: 0.6, lineHeight: 1.4 }}>
+                Nur eine Erinnerung für euch — z. B. „Sorte Schoko okay, Crunchy nicht". Ändert nie
+                das Ergebnis.
+              </p>
+            )}
+          </div>
 
           {result.dataLastModified || result.dataRevision ? (
             <div

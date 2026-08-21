@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   applyPackMatch,
+  readAllPackMatch,
   readPackMatch,
   readPackMatchEntry,
+  sanitizePackMatchStore,
+  writeAllPackMatch,
   writePackMatch,
 } from "@/lib/packmatch";
 
@@ -122,5 +125,43 @@ describe("pack match expiry", () => {
   it("readPackMatchEntry also honors 'match' expiry", () => {
     writePackMatch("20137946", "match", 0);
     expect(readPackMatchEntry("20137946", 91 * DAY)).toBeNull();
+  });
+});
+
+describe("sanitizePackMatchStore", () => {
+  it("drops malformed entries and keeps valid ones", () => {
+    expect(
+      sanitizePackMatchStore({
+        good: { value: "mismatch", ts: 5 },
+        badValue: { value: "vielleicht", ts: 5 },
+        missingTs: { value: "match" },
+      }),
+    ).toEqual({ good: { value: "mismatch", ts: 5 } });
+  });
+
+  it("returns an empty store for non-object input", () => {
+    expect(sanitizePackMatchStore(null)).toEqual({});
+    expect(sanitizePackMatchStore([1, 2])).toEqual({});
+  });
+});
+
+describe("readAllPackMatch / writeAllPackMatch (F1 export/import)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("round-trips the full store", () => {
+    writePackMatch("111", "match", 1);
+    writePackMatch("222", "mismatch", 2);
+
+    const all = readAllPackMatch();
+    expect(all).toEqual({
+      "111": { value: "match", ts: 1 },
+      "222": { value: "mismatch", ts: 2 },
+    });
+
+    window.localStorage.clear();
+    writeAllPackMatch(all);
+    expect(readAllPackMatch()).toEqual(all);
   });
 });

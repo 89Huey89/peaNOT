@@ -88,3 +88,41 @@ describe("usePrefs cardNote (F7a)", () => {
     expect(reloaded.current.prefs.cardNote).toBe("Adrenalin-Pen ist im Rucksack.");
   });
 });
+
+describe("usePrefs importPrefs (F1)", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("overlays the imported fields onto the current prefs and persists them", async () => {
+    const { result, rerender } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => {
+      result.current.importPrefs({ accent: "clay", tracesStrict: false });
+    });
+    rerender();
+
+    expect(result.current.prefs.accent).toBe("clay");
+    expect(result.current.prefs.tracesStrict).toBe(false);
+    // Untouched fields keep their prior value, not silently reset to default.
+    expect(result.current.prefs.onboarded).toBe(DEFAULT_PREFS.onboarded);
+
+    const { result: reloaded } = renderHook(() => usePrefs());
+    await waitFor(() => expect(reloaded.current.ready).toBe(true));
+    expect(reloaded.current.prefs.accent).toBe("clay");
+  });
+
+  it("leaves prefs unchanged when the imported object is empty", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    // Snapshot rather than comparing to DEFAULT_PREFS: the initial `sound`
+    // value itself already depends on vibrate support (see the "default
+    // sound behaviour" suite above), which this test isn't about.
+    const before = result.current.prefs;
+
+    act(() => result.current.importPrefs({}));
+
+    expect(result.current.prefs).toEqual(before);
+  });
+});

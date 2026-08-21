@@ -153,6 +153,41 @@ Spuren-Strikt) liegen ausschließlich im Browser des Geräts (`localStorage`,
 Keys `peanot.history.v1` / `peanot.prefs.v1`). Kein Account, kein Server-State –
 „Leeren" entfernt den Verlauf wieder.
 
+### Notiz pro Produkt (`lib/notes.ts`)
+
+Im Ergebnis lässt sich pro Barcode eine kurze eigene Notiz hinterlegen (z. B.
+„Sorte Schoko okay, Crunchy nicht" oder „Reaktion 2024") — lokal gespeichert
+(`peanot.notes.v1`, max. 200 Einträge, gleiche Machart wie
+`lib/packmatch.ts`) und im Verlauf als Vorschauzeile sichtbar. Rein
+informativ: Eine Notiz wird an keiner Stelle gelesen, die ein Verdict
+berechnet, und kann ein Ergebnis nie beeinflussen.
+
+### Export & Import (`lib/backup.ts`)
+
+Da alle Daten nur lokal liegen, ersetzt ein manueller Export den fehlenden
+Familien-Sync: **„Exportieren"** (Profil → Daten) baut eine JSON-Datei aus
+Verlauf, Notizen, Packungs-Antworten und Einstellungen
+(`{format:"peanot-export", v:1, …}`) und übergibt sie per Web-Share-Sheet
+(z. B. AirDrop aufs zweite Familien-Handy) oder, falls nicht verfügbar, als
+Direkt-Download.
+
+**„Importieren"** liest eine solche Datei und **merged** statt zu
+überschreiben:
+
+- Verlauf: dedupliziert nach ID (Fallback Barcode+Zeitstempel), bei Konflikt
+  gewinnt der neuere Eintrag.
+- Notizen: rein additiv, bei Konflikt gewinnt die neuer bearbeitete Notiz.
+- Packungs-Antworten: additiv, aber **fail-safe** — da eine Antwort ein
+  Verdict verändern kann (siehe Packungs-Gegencheck oben), gewinnt bei einem
+  Konflikt immer „Nein" gegen „Ja", unabhängig vom Zeitstempel. Ein Import
+  kann einen bereits verworfenen Datensatz also nie wieder grün machen.
+- Einstellungen werden **nie automatisch** übernommen — erst nach expliziter
+  Bestätigung, da sie u. a. `tracesStrict` und die geprüften Allergene
+  enthalten.
+
+Die reinen Merge-Funktionen sind in `lib/backup.ts` gekapselt und ohne
+localStorage/DOM testbar (`lib/backup.test.ts`).
+
 ## Architektur
 
 - `lib/allergens/` – reine, getestete Erdnuss-Erkennung (über `AllergenProfile`
@@ -162,10 +197,16 @@ Keys `peanot.history.v1` / `peanot.prefs.v1`). Kein Account, kein Server-State �
 - `lib/recalls/` – Client für lebensmittelwarnung.de, namensbasierter
   Rückruf-Abgleich (warn-only) und `checkRecalls`-Fassade für die Route.
 - `lib/theme.ts`, `lib/verdict.ts`, `lib/time.ts` – Palette, Status→Verdict-Mapping, relative Zeiten.
+- `lib/packmatch.ts`, `lib/notes.ts` – lokale Per-Barcode-Stores (Gegencheck-Antwort
+  bzw. Notiz), gleiche Machart (localStorage, Cap, defensives Parsen).
+- `lib/backup.ts` – reine Parse-/Merge-Logik für Export/Import (F1); die
+  eigentlichen localStorage-Zugriffe bleiben bei den Stores, die sie schon
+  besitzen (`components/useHistory.ts`, `lib/packmatch.ts`, `lib/notes.ts`).
 - `app/api/product/[barcode]/route.ts` – API-Route, komponiert Client + Erkennung.
 - `app/page.tsx` – Client-Router über die Screens.
 - `components/` – `BarcodeScanner` (@zxing/browser), `ManualEntry`, geteilte
-  UI-Atome (`ui.tsx`), `useHistory`/`usePrefs` (localStorage) und `screens/`.
+  UI-Atome (`ui.tsx`), `useHistory`/`usePrefs`/`useNote` (localStorage),
+  `useBackup` (Export/Import-Orchestrierung) und `screens/`.
 
 ## Deployment (Vercel Hobby)
 

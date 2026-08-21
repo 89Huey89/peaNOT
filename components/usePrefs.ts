@@ -80,5 +80,23 @@ export function usePrefs() {
     });
   }, []);
 
-  return { prefs, setPref, ready };
+  /**
+   * Apply prefs from an imported backup (F1) — unlike history/notes/
+   * pack-match, this is never called automatically: ProfileScreen only
+   * invokes it after the user explicitly confirms, since it can replace
+   * settings like tracesStrict that affect the alarm.
+   */
+  const importPrefs = useCallback((incoming: Partial<Prefs>) => {
+    setPrefs((prev) => {
+      const next = { ...prev, ...incoming };
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        /* storage unavailable (private mode / quota) – keep in-memory state */
+      }
+      return next;
+    });
+  }, []);
+
+  return { prefs, setPref, importPrefs, ready };
 }

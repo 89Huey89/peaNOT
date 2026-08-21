@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ProductResult } from "@/lib/types";
 import { resolveVerdict, type Verdict } from "@/lib/verdict";
 import { applyPackMatch, readPackMatch } from "@/lib/packmatch";
+import { mergeHistory } from "@/lib/backup";
 
 const STORAGE_KEY = "peanot.history.v1";
 const MAX_ENTRIES = 200;
@@ -119,5 +120,19 @@ export function useHistory() {
     persist([]);
   }, []);
 
-  return { history, record, clear, remove, restore, ready };
+  /**
+   * Fold an imported history (F1) into the current one — de-duplicated by
+   * id/barcode+ts, newest wins, capped at MAX_ENTRIES exactly like a live
+   * scan (see lib/backup.ts's mergeHistory). Used only by the "Daten
+   * importieren" flow in ProfileScreen.
+   */
+  const importEntries = useCallback((entries: HistoryEntry[]) => {
+    setHistory((prev) => {
+      const next = mergeHistory(prev, entries, MAX_ENTRIES);
+      persist(next);
+      return next;
+    });
+  }, []);
+
+  return { history, record, clear, remove, restore, importEntries, ready };
 }

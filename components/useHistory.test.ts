@@ -158,4 +158,23 @@ describe("useHistory", () => {
 
     expect(result.current.history).toHaveLength(1);
   });
+
+  it("importEntries (F1) merges an imported list in, newest-first and deduped", async () => {
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.record(product({ barcode: "111", productName: "Lokal" })));
+    const local = result.current.history[0]!;
+
+    act(() =>
+      result.current.importEntries([
+        local, // re-imported unchanged — must not duplicate
+        { id: "h_2_222", ts: local.ts + 1, barcode: "222", name: "Importiert", brand: "Y", verdict: "danger" },
+      ]),
+    );
+
+    expect(result.current.history.map((h) => h.name)).toEqual(["Importiert", "Lokal"]);
+    const stored = JSON.parse(window.localStorage.getItem(KEY)!);
+    expect(stored.map((h: { name: string }) => h.name)).toEqual(["Importiert", "Lokal"]);
+  });
 });

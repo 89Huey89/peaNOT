@@ -95,3 +95,26 @@ describe("HistoryScreen allergy card access (UX7)", () => {
     expect(onOpenCard).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("HistoryScreen note preview (F5)", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("shows a note preview under an entry that has one", () => {
+    window.localStorage.setItem(
+      "peanot.notes.v1",
+      JSON.stringify({ "111": { text: "Sorte Schoko okay, Crunchy nicht", ts: 1 } }),
+    );
+
+    renderScreen();
+
+    expect(screen.getByText("Sorte Schoko okay, Crunchy nicht")).toBeInTheDocument();
+  });
+
+  it("shows nothing extra for an entry without a note", () => {
+    renderScreen();
+
+    expect(screen.queryByText(/Sorte Schoko/)).not.toBeInTheDocument();
+  });
+});

@@ -5,8 +5,9 @@ import type { Palette } from "@/lib/theme";
 import { VERDICT, verdictColor, verdictGlyph, type Verdict } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
+import { readNote } from "@/lib/notes";
 import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { IdCard, X } from "lucide-react";
+import { IdCard, StickyNote, X } from "lucide-react";
 
 const FILTERS: { label: string; verdict: Verdict | null }[] = [
   { label: "Alle", verdict: null },
@@ -215,6 +216,10 @@ export default function HistoryScreen({
         ) : (
           shown.map((h) => {
             const fg = verdictColor(h.verdict, P);
+            // F5: looked up separately (not merged into `h`) so the entry
+            // handed to onOpen/onRemove/onRestore stays exactly the plain
+            // HistoryEntry those callbacks (and peanot.history.v1) expect.
+            const note = readNote(h.barcode);
             return (
               <div
                 key={h.id}
@@ -309,6 +314,30 @@ export default function HistoryScreen({
                     >
                       {VERDICT[h.verdict].label}
                     </div>
+                    {note ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          marginTop: 3,
+                          fontSize: "0.72em",
+                          opacity: 0.62,
+                        }}
+                      >
+                        <StickyNote size={11} aria-hidden="true" style={{ flexShrink: 0 }} />
+                        <span
+                          style={{
+                            minWidth: 0,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {note}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
                 </button>
                 <button

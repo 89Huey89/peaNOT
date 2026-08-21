@@ -9,6 +9,7 @@ import { useProductLookup } from "@/components/useProductLookup";
 import { usePrefs } from "@/components/usePrefs";
 import { useHistoryOverlay } from "@/components/useHistoryOverlay";
 import { useHistory, resolveHistoryVerdict, type HistoryEntry } from "@/components/useHistory";
+import { useBackup } from "@/components/useBackup";
 import { Logo, type Tab } from "@/components/ui";
 import OnboardingScreen from "@/components/screens/OnboardingScreen";
 import ScanScreen from "@/components/screens/ScanScreen";
@@ -20,9 +21,18 @@ import PhraseScreen from "@/components/screens/PhraseScreen";
 type Route = "onboarding" | "scan" | "verlauf" | "profil" | "result" | "karte";
 
 export default function Home() {
-  const { prefs, setPref, ready: prefsReady } = usePrefs();
-  const { history, record, clear, remove, restore, ready: historyReady } = useHistory();
+  const { prefs, setPref, importPrefs, ready: prefsReady } = usePrefs();
+  const {
+    history,
+    record,
+    clear,
+    remove,
+    restore,
+    importEntries,
+    ready: historyReady,
+  } = useHistory();
   const { loading, result, lookup } = useProductLookup();
+  const { exportData, importData } = useBackup({ history, importHistory: importEntries, prefs });
 
   const [route, setRoute] = useState<Route | null>(null);
   const [systemDark, setSystemDark] = useState(false);
@@ -189,12 +199,15 @@ export default function Home() {
         P={P}
         prefs={prefs}
         setPref={setPref}
+        importPrefs={importPrefs}
         onReplayOnboarding={() => {
           setPref("onboarded", false);
           setRoute("onboarding");
         }}
         onOpenCard={() => openCard("profil")}
         onTab={(t: Tab) => setRoute(t)}
+        onExport={exportData}
+        onImportFile={importData}
       />
     );
   } else {

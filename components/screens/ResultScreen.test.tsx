@@ -4,6 +4,7 @@ import ResultScreen from "@/components/screens/ResultScreen";
 import type { ProductResult } from "@/lib/types";
 import type { HistoryEntry } from "@/components/useHistory";
 import { readPackMatch } from "@/lib/packmatch";
+import { readNote, writeNote } from "@/lib/notes";
 import { CAVEATS } from "@/lib/caveats";
 import { palette } from "@/lib/theme";
 
@@ -493,5 +494,70 @@ describe("ResultScreen pack-match answer age", () => {
 
     expect(screen.getByText("Passt das zu deiner Packung?")).toBeInTheDocument();
     expect(screen.queryByText("Passt zu deiner Packung")).not.toBeInTheDocument();
+  });
+});
+
+describe("ResultScreen personal note (F5)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("offers to add a note when none exists yet", () => {
+    renderResult();
+
+    expect(screen.getByRole("button", { name: "Notiz hinzufügen" })).toBeInTheDocument();
+  });
+
+  it("saves a new note and shows it without staying in edit mode", () => {
+    renderResult();
+
+    fireEvent.click(screen.getByRole("button", { name: "Notiz hinzufügen" }));
+    fireEvent.change(screen.getByLabelText("Notiz zu diesem Produkt"), {
+      target: { value: "Sorte Schoko okay, Crunchy nicht" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(screen.getByText("Sorte Schoko okay, Crunchy nicht")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Notiz zu diesem Produkt")).not.toBeInTheDocument();
+    expect(readNote("20137946")).toBe("Sorte Schoko okay, Crunchy nicht");
+  });
+
+  it("pre-fills the existing note when editing", () => {
+    writeNote("20137946", "Bereits vorhandene Notiz");
+    renderResult();
+
+    fireEvent.click(screen.getByRole("button", { name: "Notiz bearbeiten" }));
+
+    expect(screen.getByLabelText("Notiz zu diesem Produkt")).toHaveValue(
+      "Bereits vorhandene Notiz",
+    );
+  });
+
+  it("clears the note when saved blank", () => {
+    writeNote("20137946", "Wird gelöscht");
+    renderResult();
+
+    fireEvent.click(screen.getByRole("button", { name: "Notiz bearbeiten" }));
+    fireEvent.change(screen.getByLabelText("Notiz zu diesem Produkt"), {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(screen.queryByText("Wird gelöscht")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notiz hinzufügen" })).toBeInTheDocument();
+    expect(readNote("20137946")).toBeNull();
+  });
+
+  it("discards the draft on cancel", () => {
+    renderResult();
+
+    fireEvent.click(screen.getByRole("button", { name: "Notiz hinzufügen" }));
+    fireEvent.change(screen.getByLabelText("Notiz zu diesem Produkt"), {
+      target: { value: "verworfen" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+
+    expect(screen.queryByText("verworfen")).not.toBeInTheDocument();
+    expect(readNote("20137946")).toBeNull();
   });
 });

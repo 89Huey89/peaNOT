@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ProfileScreen from "@/components/screens/ProfileScreen";
 import { DEFAULT_PREFS, type Prefs } from "@/components/usePrefs";
+import type { ImportOutcome } from "@/components/useBackup";
 import { palette } from "@/lib/theme";
 
 function setVibrateSupported(supported: boolean) {
@@ -14,20 +15,37 @@ function setVibrateSupported(supported: boolean) {
   }
 }
 
-function renderScreen(prefs: Prefs) {
+function renderScreen(
+  prefs: Prefs,
+  opts: { onImportFile?: (raw: string) => ImportOutcome } = {},
+) {
   const setPref = vi.fn();
+  const importPrefs = vi.fn();
   const onOpenCard = vi.fn();
+  const onExport = vi.fn();
+  const onImportFile =
+    opts.onImportFile ??
+    vi.fn<(raw: string) => ImportOutcome>(() => ({
+      ok: true,
+      historyCount: 0,
+      packmatchCount: 0,
+      notesCount: 0,
+      prefs: {},
+    }));
   render(
     <ProfileScreen
       P={palette("mustard")}
       prefs={prefs}
       setPref={setPref}
+      importPrefs={importPrefs}
       onReplayOnboarding={() => {}}
       onOpenCard={onOpenCard}
       onTab={() => {}}
+      onExport={onExport}
+      onImportFile={onImportFile}
     />,
   );
-  return { setPref, onOpenCard };
+  return { setPref, importPrefs, onOpenCard, onExport, onImportFile };
 }
 
 describe("ProfileScreen allergen picker", () => {
@@ -128,5 +146,112 @@ describe("ProfileScreen font scale ('Größere Schrift')", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sehr groß" }));
 
     expect(setPref).toHaveBeenCalledWith("fontScale", "sehr-gross");
+  });
+});
+
+describe("ProfileScreen backup export/import (F1)", () => {
+  function pickFile(raw: string) {
+    const file = new File([raw], "backup.json", { type: "application/json" });
+    fireEvent.change(screen.getByLabelText("Backup-Datei auswählen"), {
+      target: { files: [file] },
+    });
+  }
+
+  it("exports on tap without touching prefs", () => {
+    const { onExport, setPref } = renderScreen(DEFAULT_PREFS);
+
+    fireEvent.click(screen.getByRole("button", { name: /Exportieren/ }));
+
+    expect(onExport).toHaveBeenCalledTimes(1);
+    expect(setPref).not.toHaveBeenCalled();
+  });
+
+  it("shows a merge summary after a successful import", async () => {
+    const onImportFile = vi.fn<(raw: string) => ImportOutcome>(() => ({
+      ok: true,
+      historyCount: 3,
+      packmatchCount: 1,
+      notesCount: 2,
+      prefs: {},
+    }));
+    renderScreen(DEFAULT_PREFS, { onImportFile });
+
+    pickFile('{"format":"peanot-export"}');
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Übernommen: 3 Scan(s), 2 Notiz(en), 1 Packungs-Antwort(en)."),
+      ).toBeInTheDocument(),
+    );
+    expect(onImportFile).toHaveBeenCalledWith('{"format":"peanot-export"}');
+  });
+
+  it("shows an error message for a rejected import instead of a summary", async () => {
+    const onImportFile = vi.fn<(raw: string) => ImportOutcome>(() => ({
+      ok: false,
+      error: "unsupported-format",
+    }));
+    renderScreen(DEFAULT_PREFS, { onImportFile });
+
+    pickFile("{}");
+
+    await waitFor(() =>
+      expect(screen.getByText("Diese Datei ist kein peaNOT-Backup.")).toBeInTheDocument(),
+    );
+  });
+
+  it("only applies imported prefs after an explicit confirm", async () => {
+    const onImportFile = vi.fn<(raw: string) => ImportOutcome>(() => ({
+      ok: true,
+      historyCount: 0,
+      packmatchCount: 0,
+      notesCount: 0,
+      prefs: { accent: "clay" },
+    }));
+    const { importPrefs } = renderScreen(DEFAULT_PREFS, { onImportFile });
+
+    pickFile("{}");
+
+    await screen.findByText("Auch die Einstellungen übernehmen?");
+    expect(importPrefs).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+
+    expect(importPrefs).toHaveBeenCalledWith({ accent: "clay" });
+    expect(screen.queryByText("Auch die Einstellungen übernehmen?")).not.toBeInTheDocument();
+  });
+
+  it("never applies prefs when the user declines", async () => {
+    const onImportFile = vi.fn<(raw: string) => ImportOutcome>(() => ({
+      ok: true,
+      historyCount: 0,
+      packmatchCount: 0,
+      notesCount: 0,
+      prefs: { accent: "clay" },
+    }));
+    const { importPrefs } = renderScreen(DEFAULT_PREFS, { onImportFile });
+
+    pickFile("{}");
+    await screen.findByText("Auch die Einstellungen übernehmen?");
+    fireEvent.click(screen.getByRole("button", { name: "Nicht übernehmen" }));
+
+    expect(importPrefs).not.toHaveBeenCalled();
+    expect(screen.queryByText("Auch die Einstellungen übernehmen?")).not.toBeInTheDocument();
+  });
+
+  it("does not offer a prefs confirmation when the import carried none", async () => {
+    const onImportFile = vi.fn<(raw: string) => ImportOutcome>(() => ({
+      ok: true,
+      historyCount: 1,
+      packmatchCount: 0,
+      notesCount: 0,
+      prefs: {},
+    }));
+    renderScreen(DEFAULT_PREFS, { onImportFile });
+
+    pickFile("{}");
+
+    await screen.findByText(/Übernommen:/);
+    expect(screen.queryByText("Auch die Einstellungen übernehmen?")).not.toBeInTheDocument();
   });
 });
