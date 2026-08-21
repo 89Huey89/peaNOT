@@ -9,7 +9,7 @@ import { useEffect, useRef } from "react";
 // single popstate — the iPhone edge-swipe/back gesture — closing whatever
 // was pushed most recently is always the right thing, without needing a
 // full router or per-route path matching.
-let stack: Array<() => void> = [];
+const stack: Array<() => void> = [];
 // Set right before *we* call history.back() to undo our own pushState (a
 // UI-driven close, e.g. tapping "Schließen") — swallows the resulting
 // popstate so the shared listener below doesn't also pop the next overlay

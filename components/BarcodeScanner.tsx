@@ -197,7 +197,7 @@ export default function BarcodeScanner({
           : "";
       setState(name === "NotAllowedError" ? "denied" : "unsupported");
     }
-  }, [playVideo]);
+  }, []);
 
   const toggleTorch = useCallback(async () => {
     const track = trackRef.current;
@@ -241,6 +241,7 @@ export default function BarcodeScanner({
     // Deliberately run once on mount (empty deps): a mid-session pref flip
     // must not retroactively start (or restart) an already idle/scanning
     // camera.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Parent-controlled freeze/resume. While paused (lookup running or result on

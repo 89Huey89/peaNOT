@@ -1261,7 +1261,7 @@ export default function ResultScreen({
               </>
             ) : (
               <p style={{ margin: "5px 0 0", fontSize: 12, opacity: 0.6, lineHeight: 1.4 }}>
-                Nur eine Erinnerung für euch — z. B. „Sorte Schoko okay, Crunchy nicht". Ändert nie
+                Nur eine Erinnerung für euch — z. B. „Sorte Schoko okay, Crunchy nicht&quot;. Ändert nie
                 das Ergebnis.
               </p>
             )}

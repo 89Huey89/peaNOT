@@ -459,7 +459,7 @@ export default function HistoryScreen({
           }}
         >
           <span style={{ fontSize: 13, fontWeight: 600, minWidth: 0, flex: 1 }}>
-            „{pendingUndo.name}" entfernt.
+            „{pendingUndo.name}&quot; entfernt.
           </span>
           <button
             type="button"

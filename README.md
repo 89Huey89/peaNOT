@@ -117,6 +117,7 @@ npm install
 npm run dev        # http://localhost:3000
 npm test           # Vitest (alle Tests)
 npm run typecheck  # tsc --noEmit
+npm run lint       # ESLint (next/core-web-vitals + next/typescript)
 npm run build      # Production-Build
 ```
 
@@ -294,3 +295,8 @@ informativ und an keiner Stelle mit Verdict-Logik verbunden.
 Repository in Vercel importieren – keine Umgebungsvariablen, keine Datenbank
 nötig. Vercel liefert HTTPS (für die Kamera erforderlich). Die API-Route läuft
 im Node-Runtime.
+
+`next.config.mjs` setzt auf jeder Route `Permissions-Policy:
+camera=(self), microphone=(), geolocation=()` (nur die Kamera wird gebraucht),
+`X-Frame-Options: DENY` (nie in ein fremdes Iframe einbettbar) und
+`X-Content-Type-Options: nosniff`.
