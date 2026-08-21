@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { palette } from "@/lib/theme";
+import { unlockAudio } from "@/lib/feedback";
 import { useProductLookup } from "@/components/useProductLookup";
 import { usePrefs } from "@/components/usePrefs";
 import { useHistory, type HistoryEntry } from "@/components/useHistory";
@@ -66,6 +67,11 @@ export default function Home() {
 
   const runLookup = useCallback(
     async (barcode: string) => {
+      // Every alarm beep traces back to a lookup started here (camera
+      // detection, manual entry, search, or a history/staple tap) — resuming
+      // the shared AudioContext synchronously at the top covers all of them,
+      // not just the explicit "Kamera starten" unlock in BarcodeScanner.
+      unlockAudio();
       const r = await lookup(barcode, prefs.selectedAllergens);
       if (r) {
         record(r);

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ACCENTS, type Accent, type Palette, type ThemeMode } from "@/lib/theme";
 import { ALLERGEN_LIST } from "@/lib/allergens/profile";
 import type { Prefs } from "@/components/usePrefs";
@@ -38,12 +38,14 @@ function Toggle({
   label,
   sub,
   checked,
+  disabled,
   onChange,
 }: {
   P: Palette;
   label: string;
   sub?: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
@@ -51,6 +53,7 @@ function Toggle({
       type="button"
       role="switch"
       aria-checked={checked}
+      disabled={disabled}
       className="tap"
       onClick={() => onChange(!checked)}
       style={{
@@ -65,7 +68,8 @@ function Toggle({
         fontFamily: "inherit",
         color: "inherit",
         textAlign: "left",
-        cursor: "pointer",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.55 : 1,
       }}
     >
       <span style={{ flex: 1, minWidth: 0 }}>
@@ -119,6 +123,16 @@ export default function ProfileScreen({
   onReplayOnboarding: () => void;
   onTab: (t: Tab) => void;
 }) {
+  // iOS Safari never shipped navigator.vibrate — checked client-side only, so
+  // the toggle starts enabled and settles into its real (disabled) state
+  // right after mount instead of guessing during SSR.
+  const [vibrateUnsupported, setVibrateUnsupported] = useState(false);
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && !("vibrate" in navigator)) {
+      setVibrateUnsupported(true);
+    }
+  }, []);
+
   return (
     <AppShell P={P}>
       <TopBar P={P} />
@@ -288,7 +302,9 @@ export default function ProfileScreen({
           <Toggle
             P={P}
             label="Vibrieren bei Treffer"
+            sub={vibrateUnsupported ? "Auf dem iPhone nicht verfügbar" : undefined}
             checked={prefs.haptic}
+            disabled={vibrateUnsupported}
             onChange={(v) => setPref("haptic", v)}
           />
           <Toggle

@@ -30,7 +30,14 @@ function load(): Prefs {
   if (typeof window === "undefined") return DEFAULT_PREFS;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_PREFS;
+    if (!raw) {
+      // iOS Safari never implemented navigator.vibrate, so the haptic channel
+      // is silently a no-op there. Give brand-new users an audible alarm by
+      // default in that case; anyone with an existing stored choice below
+      // keeps exactly what they picked, untouched.
+      const vibrateSupported = typeof navigator !== "undefined" && "vibrate" in navigator;
+      return vibrateSupported ? DEFAULT_PREFS : { ...DEFAULT_PREFS, sound: true };
+    }
     return { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<Prefs>) };
   } catch {
     return DEFAULT_PREFS;

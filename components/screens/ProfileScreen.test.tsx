@@ -1,8 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ProfileScreen from "@/components/screens/ProfileScreen";
 import { DEFAULT_PREFS, type Prefs } from "@/components/usePrefs";
 import { palette } from "@/lib/theme";
+
+function setVibrateSupported(supported: boolean) {
+  if (supported) {
+    Object.defineProperty(navigator, "vibrate", { configurable: true, value: () => true });
+  } else {
+    // jsdom has no navigator.vibrate at all by default (matches iOS Safari),
+    // but undo a previous test's mock just in case.
+    Reflect.deleteProperty(navigator, "vibrate");
+  }
+}
 
 function renderScreen(prefs: Prefs) {
   const setPref = vi.fn();
@@ -49,5 +59,38 @@ describe("ProfileScreen allergen picker", () => {
       "aria-checked",
       "false",
     );
+  });
+});
+
+describe("ProfileScreen vibration toggle", () => {
+  afterEach(() => {
+    setVibrateSupported(false);
+  });
+
+  it("disables the toggle and explains why when the Vibration API is unavailable (iOS)", async () => {
+    setVibrateSupported(false);
+    const { setPref } = renderScreen({ ...DEFAULT_PREFS, haptic: true });
+
+    const toggle = await screen.findByRole("switch", { name: /Vibrieren bei Treffer/ });
+    await waitFor(() => expect(toggle).toBeDisabled());
+    expect(screen.getByText("Auf dem iPhone nicht verfügbar")).toBeInTheDocument();
+
+    // The stored preference itself is untouched — still reflects prefs.haptic.
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(toggle);
+    expect(setPref).not.toHaveBeenCalled();
+  });
+
+  it("keeps the toggle enabled when the Vibration API is available", () => {
+    setVibrateSupported(true);
+    const { setPref } = renderScreen({ ...DEFAULT_PREFS, haptic: false });
+
+    const toggle = screen.getByRole("switch", { name: /Vibrieren bei Treffer/ });
+    expect(toggle).not.toBeDisabled();
+    expect(screen.queryByText("Auf dem iPhone nicht verfügbar")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(setPref).toHaveBeenCalledWith("haptic", true);
   });
 });

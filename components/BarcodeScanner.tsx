@@ -5,7 +5,7 @@ import { Check } from "lucide-react";
 import type { IScannerControls } from "@zxing/browser";
 import { sanitizeBarcode } from "@/lib/barcode";
 import { shouldAcceptScan, type LastScan } from "@/lib/scan";
-import { tick, vibrate } from "@/lib/feedback";
+import { tick, unlockAudio, vibrate } from "@/lib/feedback";
 
 type ScannerState = "idle" | "starting" | "scanning" | "denied" | "unsupported";
 
@@ -71,6 +71,9 @@ export default function BarcodeScanner({
   }, []);
 
   const start = useCallback(async () => {
+    // Runs synchronously in the tap's call stack (before the first await),
+    // which is the only place iOS lets a suspended AudioContext resume.
+    unlockAudio();
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setState("unsupported");
       return;
