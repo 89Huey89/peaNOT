@@ -32,7 +32,7 @@ function Section({
 }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <Mono style={{ opacity: 0.55, marginBottom: 8, display: "block" }}>{title}</Mono>
+      <Mono style={{ opacity: 0.7, marginBottom: 8, display: "block" }}>{title}</Mono>
       <div
         style={{
           padding: "14px 16px",
@@ -291,7 +291,7 @@ export default function ProfileScreen({
             >
               Privat &amp; lokal
             </div>
-            <Mono style={{ opacity: 0.55 }}>kein Konto · alles auf diesem Gerät</Mono>
+            <Mono style={{ opacity: 0.7 }}>kein Konto · alles auf diesem Gerät</Mono>
           </div>
         </div>
 
@@ -509,7 +509,7 @@ export default function ProfileScreen({
             >
               <div>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{n}</div>
-                <Mono style={{ opacity: 0.55 }}>{d}</Mono>
+                <Mono style={{ opacity: 0.7 }}>{d}</Mono>
               </div>
             </div>
           ))}

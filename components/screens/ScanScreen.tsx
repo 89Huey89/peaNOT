@@ -144,7 +144,7 @@ export default function ScanScreen({
                   boxShadow: `0 0 0 3px ${online ? P.GREEN : P.AMBER}22`,
                 }}
               />
-              <Mono style={{ opacity: 0.7, color: online ? undefined : P.AMBER_TEXT }}>
+              <Mono style={{ opacity: online ? 0.7 : 1, color: online ? undefined : P.AMBER_TEXT }}>
                 {online ? "live" : "offline"}
               </Mono>
             </button>

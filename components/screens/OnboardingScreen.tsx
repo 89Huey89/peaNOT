@@ -3,11 +3,14 @@ import { verdictColor, type Verdict } from "@/lib/verdict";
 import { AppShell, Logo, Mono } from "@/components/ui";
 import { ArrowRight } from "lucide-react";
 
-const STATES: [Verdict, string][] = [
-  ["safe", "Sicher"],
-  ["danger", "Warnung"],
-  ["trace", "Spuren"],
-  ["unknown", "Unbekannt"],
+// Verdict, the word peaNOT uses for it, and what it means for you. The second
+// line says the consequence rather than repeating the name — "sicher" has to
+// read as "nothing found in the data", never as a guarantee.
+const STATES: [Verdict, string, string][] = [
+  ["safe", "sicher", "Nichts gefunden"],
+  ["danger", "treffer", "Nicht essen"],
+  ["trace", "spuren", "Nur mit Vorsicht"],
+  ["unknown", "keine daten", "Selbst prüfen"],
 ];
 
 export default function OnboardingScreen({
@@ -77,7 +80,7 @@ export default function OnboardingScreen({
               marginTop: 24,
             }}
           >
-            {STATES.map(([k, l]) => (
+            {STATES.map(([k, name, meaning]) => (
               <div
                 key={k}
                 style={{
@@ -96,9 +99,9 @@ export default function OnboardingScreen({
                       background: verdictColor(k, P),
                     }}
                   />
-                  <Mono style={{ opacity: 0.55, fontSize: 9 }}>{k}</Mono>
+                  <Mono style={{ opacity: 0.7 }}>{name}</Mono>
                 </div>
-                <div style={{ fontWeight: 600, fontSize: 13.5, marginTop: 4 }}>{l}</div>
+                <div style={{ fontWeight: 600, fontSize: 13.5, marginTop: 4 }}>{meaning}</div>
               </div>
             ))}
           </div>
@@ -125,7 +128,7 @@ export default function OnboardingScreen({
             <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>Loslegen <ArrowRight size={16} aria-hidden="true" /></span>
           </button>
           <div style={{ textAlign: "center", marginTop: 10 }}>
-            <Mono style={{ opacity: 0.5 }}>Wir bitten gleich um Kamera-Zugriff</Mono>
+            <Mono style={{ opacity: 0.7 }}>Wir bitten gleich um Kamera-Zugriff</Mono>
           </div>
         </div>
       </div>

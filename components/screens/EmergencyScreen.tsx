@@ -162,7 +162,7 @@ export default function EmergencyScreen({
           Öffnet den Wähler — iOS fragt vor dem Anruf noch einmal nach.
         </p>
 
-        <Mono style={{ opacity: 0.55, marginBottom: 8, display: "block" }}>
+        <Mono style={{ opacity: 0.7, marginBottom: 8, display: "block" }}>
           Adrenalin-Notfallplan
         </Mono>
 
@@ -367,7 +367,7 @@ export default function EmergencyScreen({
           )}
         </Card>
 
-        <Mono style={{ opacity: 0.55, marginBottom: 8, display: "block" }}>
+        <Mono style={{ opacity: 0.7, marginBottom: 8, display: "block" }}>
           Medikament, Dosis, Notfallset-Ort
         </Mono>
         <textarea

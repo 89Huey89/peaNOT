@@ -471,5 +471,7 @@ body {
 
 .history-search::placeholder {
   color: var(--dim, #6b6555);
-  opacity: 0.8;
+  /* Firefox dims placeholders by default; DIM is already the muted tone and
+     only clears 4.5:1 undimmed. */
+  opacity: 1;
 }

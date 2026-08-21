@@ -342,7 +342,14 @@ export default function ResultScreen({
   // KEINE_DATEN is fail-safe ("could be anything") and reads as a genuine
   // warning, not a neutral "we don't know" — so it borrows the hit's red,
   // distinguished from a real hit by shape (dashed ring, not the solid stamp).
-  const fg = strictTraceHit || isUnknown ? P.RED : verdictColor(verdict, P);
+  // `fg` colors text (the mono kicker at ~11px and the verdict title), so the
+  // amber verdicts take AMBER_TEXT — fill-grade AMBER stays below 4.5:1 even on
+  // the card's own tint (see lib/theme.ts). The tint and frame keep AMBER.
+  const fg = strictTraceHit || isUnknown
+    ? P.RED
+    : isTrace || isPartial
+      ? P.AMBER_TEXT
+      : verdictColor(verdict, P);
 
   // The record can only be matched to the pack in hand by the person holding
   // it — so ask, but only where the barcode itself leaves identity open.
@@ -606,7 +613,8 @@ export default function ResultScreen({
               lineHeight: 1.45,
             }}
           >
-            <Mono style={{ opacity: 0.75, color: P.AMBER_TEXT }}>offline</Mono>
+            {/* Undimmed: AMBER_TEXT only clears 4.5:1 at full strength. */}
+            <Mono style={{ color: P.AMBER_TEXT }}>offline</Mono>
             <div style={{ marginTop: 3 }}>
               Offline — Ergebnis aus Abfrage vom{" "}
               {formatRelative(new Date(result.cachedAt).getTime())}.
@@ -631,7 +639,7 @@ export default function ResultScreen({
           >
             <AlertTriangle size={15} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1, color: P.RED }} />
             <div>
-              <Mono style={{ opacity: 0.85, color: P.RED }}>änderung zum letzten scan</Mono>
+              <Mono style={{ color: P.RED }}>änderung zum letzten scan</Mono>
               <div style={{ marginTop: 3 }}>
                 Zuletzt als <strong>{VERDICT[worsenedFrom.verdict].label}</strong> gespeichert —
                 jetzt <strong>{copy.label}</strong>.
@@ -700,7 +708,7 @@ export default function ResultScreen({
                   flexShrink: 0,
                 }}
               >
-                <Mono style={{ opacity: 0.55, fontSize: 8 }}>foto</Mono>
+                <Mono style={{ opacity: 0.7 }}>foto</Mono>
               </div>
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -819,7 +827,7 @@ export default function ResultScreen({
                 border: `2px solid ${P.RED}`,
               }}
             >
-              <Mono style={{ opacity: 0.75, color: P.RED }}>
+              <Mono style={{ color: P.RED }}>
                 amtliche warnung · lebensmittelwarnung.de
               </Mono>
               <div
@@ -1033,7 +1041,7 @@ export default function ResultScreen({
                 border: `1.5px dashed ${P.AMBER}`,
               }}
             >
-              <Mono style={{ opacity: 0.65, color: P.AMBER_TEXT }}>vorbehalt</Mono>
+              <Mono style={{ color: P.AMBER_TEXT }}>vorbehalt</Mono>
               {resolved.caveats.map((key) => (
                 <div key={key} style={{ marginTop: 6 }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5 }}>{CAVEATS[key].title}</div>
@@ -1136,7 +1144,8 @@ export default function ResultScreen({
                 {traceOnly.map((name) => (
                   <Chip key={`t-${name}`} tone="warn" P={P}>
                     <span style={{ fontWeight: 700 }}>{name}</span>
-                    <span style={{ opacity: 0.7, fontWeight: 500 }}>· Spuren</span>
+                    {/* Weight, not opacity: dimming would undo AMBER_TEXT's contrast. */}
+                    <span style={{ fontWeight: 500 }}>· Spuren</span>
                   </Chip>
                 ))}
               </div>
@@ -1254,7 +1263,7 @@ export default function ResultScreen({
                   {note}
                 </div>
                 {notedAt ? (
-                  <Mono style={{ opacity: 0.5, display: "block", marginTop: 4 }}>
+                  <Mono style={{ opacity: 0.7, display: "block", marginTop: 4 }}>
                     {formatRelative(notedAt)}
                   </Mono>
                 ) : null}
@@ -1279,7 +1288,7 @@ export default function ResultScreen({
                 lineHeight: 1.45,
               }}
             >
-              <Mono style={{ opacity: 0.65, color: dataStale ? P.AMBER_TEXT : undefined }}>
+              <Mono style={{ opacity: dataStale ? 1 : 0.65, color: dataStale ? P.AMBER_TEXT : undefined }}>
                 datenstand · open food facts
               </Mono>
               <div style={{ marginTop: 4 }}>

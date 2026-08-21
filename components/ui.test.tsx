@@ -12,11 +12,25 @@ const SERIF_ADVANCE = 0.52;
 const MONO_ADVANCE = 0.74;
 const MAX_LINE = 68;
 
-function renderStamp(verdict: Verdict) {
-  const { container } = render(<Stamp verdict={verdict} P={palette("mustard")} animate={false} />);
+// jsdom reports inline styles as rgb(), so compare against a converted hex.
+function hexToRgb(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function renderStamp(verdict: Verdict, colorOverride?: string) {
+  const { container } = render(
+    <Stamp
+      verdict={verdict}
+      P={palette("mustard")}
+      animate={false}
+      colorOverride={colorOverride}
+    />,
+  );
   const word = container.querySelector("[data-stamp='word']") as HTMLElement;
   const sub = container.querySelector("span") as HTMLElement;
-  return { word, sub };
+  const ring = container.firstElementChild as HTMLElement;
+  return { word, sub, ring };
 }
 
 describe("Stamp", () => {
@@ -38,5 +52,23 @@ describe("Stamp", () => {
 
     expect(size).toBeLessThanOrEqual(8);
     expect(longestChunk.length * MONO_ADVANCE * size).toBeLessThanOrEqual(MAX_LINE);
+  });
+
+  it.each(["trace", "partial"] as Verdict[])(
+    "prints the %s stamp in the readable amber, not the fill amber",
+    (verdict) => {
+      const P = palette("mustard");
+      const { ring } = renderStamp(verdict);
+
+      expect(ring.style.color).toBe(hexToRgb(P.AMBER_TEXT));
+      expect(ring.style.color).not.toBe(hexToRgb(P.AMBER));
+    },
+  );
+
+  it("still lets a caller override the color (strict mode)", () => {
+    const P = palette("mustard");
+    const { ring } = renderStamp("trace", P.RED);
+
+    expect(ring.style.color).toBe(hexToRgb(P.RED));
   });
 });

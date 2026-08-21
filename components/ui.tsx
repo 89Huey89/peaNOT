@@ -110,7 +110,12 @@ export function Stamp({
    * mode treats a trace like a hit but "spuren" must stay legible. */
   colorOverride?: string;
 }) {
-  const fg = colorOverride ?? verdictColor(verdict, P);
+  // The stamp is ring *and* text: the word sits at ~17-24px, below the
+  // large-text threshold, so the amber verdicts print in AMBER_TEXT rather than
+  // the fill-grade AMBER (see lib/theme.ts). Dark mode maps both to the same
+  // value, so this only bites in light mode.
+  const amberVerdict = VERDICT[verdict].colorKey === "AMBER";
+  const fg = colorOverride ?? (amberVerdict ? P.AMBER_TEXT : verdictColor(verdict, P));
   const { stampWord, stampSub } = VERDICT[verdict];
   return (
     <div

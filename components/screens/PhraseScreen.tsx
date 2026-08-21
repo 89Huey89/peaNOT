@@ -50,7 +50,7 @@ function CardNote({ P, note, size }: { P: Palette; note: string; size: "card" | 
         borderTop: `1.5px dashed ${P.INK}26`,
       }}
     >
-      <Mono style={{ opacity: 0.55, display: "block", marginBottom: 5, color: P.DIM }}>
+      <Mono style={{ opacity: 0.7, display: "block", marginBottom: 5 }}>
         Eigener Zusatz
       </Mono>
       <p
@@ -221,7 +221,7 @@ export default function PhraseScreen({
           Verunreinigung.
         </p>
 
-        <Mono style={{ opacity: 0.55, marginBottom: 8, display: "block" }}>Wo?</Mono>
+        <Mono style={{ opacity: 0.7, marginBottom: 8, display: "block" }}>Wo?</Mono>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
           {VENUES.map((v) => {
             const active = v.key === venue;
@@ -261,7 +261,7 @@ export default function PhraseScreen({
           })}
         </div>
 
-        <Mono style={{ opacity: 0.55, marginBottom: 8, display: "block" }}>Sprache</Mono>
+        <Mono style={{ opacity: 0.7, marginBottom: 8, display: "block" }}>Sprache</Mono>
         <div style={{ position: "relative", marginBottom: venueFallsBack ? 8 : 18 }}>
           <span
             aria-hidden="true"
@@ -323,7 +323,7 @@ export default function PhraseScreen({
             border: `1px solid ${P.INK}1a`,
           }}
         >
-          <Mono style={{ opacity: 0.5, display: "block", marginBottom: 10 }}>
+          <Mono style={{ opacity: 0.7, display: "block", marginBottom: 10 }}>
             {lang.label}
           </Mono>
           <p
@@ -368,7 +368,7 @@ export default function PhraseScreen({
         </div>
 
         <div style={{ marginTop: 18 }}>
-          <Mono style={{ opacity: 0.55, marginBottom: 8, display: "block" }}>
+          <Mono style={{ opacity: 0.7, marginBottom: 8, display: "block" }}>
             Eigener Zusatz (optional)
           </Mono>
           <textarea
@@ -392,7 +392,7 @@ export default function PhraseScreen({
               lineHeight: 1.5,
             }}
           />
-          <p style={{ margin: "6px 0 0", fontSize: 11.5, opacity: 0.55, lineHeight: 1.4 }}>
+          <p style={{ margin: "6px 0 0", fontSize: 11.5, opacity: 0.7, lineHeight: 1.4 }}>
             Nur dein eigener Text, unübersetzt — erscheint auf der Karte klar
             abgesetzt unter dem geprüften Satz, nie darin vermischt.
           </p>
@@ -400,7 +400,7 @@ export default function PhraseScreen({
 
         {code !== "de" ? (
           <div style={{ marginTop: 16 }}>
-            <Mono style={{ opacity: 0.5, display: "block", marginBottom: 6 }}>
+            <Mono style={{ opacity: 0.7, display: "block", marginBottom: 6 }}>
               Auf Deutsch
             </Mono>
             <p style={{ margin: 0, fontSize: 13, opacity: 0.7, lineHeight: 1.5 }}>
@@ -412,7 +412,7 @@ export default function PhraseScreen({
         <p
           style={{
             fontSize: 11,
-            opacity: 0.5,
+            opacity: 0.7,
             textAlign: "center",
             margin: "22px 0 0",
             lineHeight: 1.5,
@@ -467,7 +467,7 @@ export default function PhraseScreen({
           </button>
 
           <div style={{ marginTop: 8 }}>
-            <Mono style={{ opacity: 0.5, display: "block", marginBottom: 14 }}>
+            <Mono style={{ opacity: 0.7, display: "block", marginBottom: 14 }}>
               {lang.label}
             </Mono>
             <p

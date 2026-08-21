@@ -9,11 +9,14 @@ export const PAL_LIGHT = {
   DIM: "#6b6555",
   GREEN: "#1f6b3a",
   RED: "#c4321f",
-  AMBER: "#c97c0a",
-  // AMBER only reaches 2.76:1 on BG / 3.24:1 on PAPER — well under the 4.5:1
-  // small-text floor. Keep AMBER for fills/stamps (it sits on its own tinted
-  // backdrop there); use AMBER_TEXT for amber text directly on BG/PAPER
-  // (5.15:1 / 6.04:1).
+  // Amber is the fill/border/dot color, so it has to clear the 3:1 non-text
+  // floor against cream (3.48:1), paper (4.09:1) and its own `${AMBER}12` card
+  // tint (3.23:1) — the tightest pairing, since a dashed amber frame sits right
+  // on that tint. Anything lighter fails there.
+  AMBER: "#b46b04",
+  // Still short of the 4.5:1 small-text floor, so amber *text* (kickers, chip
+  // labels, the stamp word) uses AMBER_TEXT: 5.15:1 on BG / 6.04:1 on PAPER.
+  // Undimmed — an opacity below 1 hands the contrast straight back.
   AMBER_TEXT: "#8a5606",
   // Foreground for a glyph/mark/banner sitting on a solid GREEN/RED/AMBER
   // fill. White reads fine against light mode's dark, saturated fills.
