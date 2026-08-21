@@ -42,6 +42,21 @@ export default function Home() {
     document.body.style.background = P.OUTER;
   }, [P.OUTER]);
 
+  // The static theme-color <meta> pair in layout.tsx only tracks the OS
+  // scheme; mirror the resolved in-app theme (which can override it) into a
+  // dynamic meta appended after them so Safari's chrome / Android's status
+  // bar follow the user's choice too.
+  useEffect(() => {
+    let meta = document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"][data-dynamic]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "theme-color";
+      meta.dataset.dynamic = "";
+      document.head.appendChild(meta);
+    }
+    meta.content = P.BG;
+  }, [P.BG]);
+
   // Decide the first screen once storage has loaded (avoids onboarding flash).
   useEffect(() => {
     if (!ready || bootstrapped.current) return;

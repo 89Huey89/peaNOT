@@ -4,6 +4,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 const INSTALL_DISMISSED_KEY = "peanot.install-dismissed.v1";
+const PREFS_KEY = "peanot.prefs.v1";
+// Give the onboarding CTA (and the first scan) room before nagging about install.
+const INSTALL_DELAY_MS = 4000;
+
+function isOnboarded(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(PREFS_KEY);
+    if (!raw) return false;
+    return Boolean((JSON.parse(raw) as { onboarded?: boolean }).onboarded);
+  } catch {
+    return false;
+  }
+}
 
 /** The slice of BeforeInstallPromptEvent we use (not in lib.dom yet). */
 interface InstallPromptEvent extends Event {
@@ -33,7 +47,37 @@ export default function ServiceWorkerRegister() {
   const [installEvt, setInstallEvt] = useState<InstallPromptEvent | null>(null);
   const [showIosHint, setShowIosHint] = useState(false);
   const [installDismissed, setInstallDismissed] = useState(true);
+  const [installEligible, setInstallEligible] = useState(false);
   const reloadOnControllerChange = useRef(false);
+
+  // Only surface the install banner once onboarding is done (it would
+  // otherwise sit on top of the "Loslegen" CTA) and after a short delay so it
+  // doesn't compete with the very first scan either. Onboarding can finish
+  // mid-session without a reload, so poll storage until it does.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let delayTimer: ReturnType<typeof setTimeout> | undefined;
+    let poll: ReturnType<typeof setInterval> | undefined;
+
+    const armDelay = () => {
+      delayTimer = setTimeout(() => setInstallEligible(true), INSTALL_DELAY_MS);
+    };
+
+    if (isOnboarded()) {
+      armDelay();
+    } else {
+      poll = setInterval(() => {
+        if (!isOnboarded()) return;
+        if (poll) clearInterval(poll);
+        armDelay();
+      }, 1000);
+    }
+
+    return () => {
+      if (delayTimer) clearTimeout(delayTimer);
+      if (poll) clearInterval(poll);
+    };
+  }, []);
 
   // Service-worker registration + update detection (production only — in dev
   // the SW would cache and then serve stale Next assets).
@@ -135,7 +179,7 @@ export default function ServiceWorkerRegister() {
     );
   }
 
-  if (!installDismissed && installEvt) {
+  if (!installDismissed && installEligible && installEvt) {
     return (
       <Banner
         message="peaNOT zum Startbildschirm hinzufügen?"
@@ -145,7 +189,7 @@ export default function ServiceWorkerRegister() {
     );
   }
 
-  if (!installDismissed && showIosHint) {
+  if (!installDismissed && installEligible && showIosHint) {
     return (
       <Banner
         message="Installieren: Teilen-Symbol → „Zum Home-Bildschirm“."
