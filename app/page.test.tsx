@@ -6,13 +6,20 @@ import { __clearProductLookupCache } from "@/components/useProductLookup";
 
 // ScanScreen owns the camera (BarcodeScanner/@zxing) — irrelevant to the
 // dialog-wiring and verdict-worsening behavior under test here, so it is
-// replaced with a minimal stub that exposes the one callback these tests
-// drive: onDetected. Real camera behavior is covered by BarcodeScanner.test.tsx.
+// replaced with a minimal stub that exposes the callbacks these tests drive:
+// onDetected and onTab (to reach Verlauf without a real TabBar). Real camera
+// behavior is covered by BarcodeScanner.test.tsx.
 vi.mock("@/components/screens/ScanScreen", () => ({
-  default: (props: { onDetected: (barcode: string) => void }) => (
+  default: (props: {
+    onDetected: (barcode: string) => void;
+    onTab: (t: "scan" | "verlauf" | "profil") => void;
+  }) => (
     <div data-testid="scan-screen-stub">
       <button type="button" onClick={() => props.onDetected("4011200296908")}>
         simulate detect
+      </button>
+      <button type="button" onClick={() => props.onTab("verlauf")}>
+        goto verlauf
       </button>
     </div>
   ),
@@ -114,5 +121,39 @@ describe("Home result dialog", () => {
     // Informational only: the worsening note is not the only thing that
     // changed — the verdict itself (a real hit) still drives the alarm below.
     expect(screen.getByText("Erdnuss enthalten.")).toBeInTheDocument();
+  });
+});
+
+describe("Home allergy card access (UX7)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns to the tab that opened the card, not always Scan", async () => {
+    render(<Home />);
+
+    // Reach Verlauf (via the stubbed ScanScreen's onTab), open the card from
+    // Verlauf's TopBar, then go back — it should land back on Verlauf.
+    await userEvent.click(await screen.findByText("goto verlauf"));
+    await userEvent.click(await screen.findByRole("button", { name: "Allergie-Karte öffnen" }));
+    expect(await screen.findByText("Allergie-Karte")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Zurück" }));
+
+    expect(screen.getByRole("heading", { name: "Verlauf" })).toBeInTheDocument();
+    expect(screen.queryByText("Allergie-Karte")).not.toBeInTheDocument();
   });
 });

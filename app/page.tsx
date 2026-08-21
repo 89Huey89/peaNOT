@@ -26,6 +26,10 @@ export default function Home() {
   const [route, setRoute] = useState<Route | null>(null);
   const [systemDark, setSystemDark] = useState(false);
   const [lastKnown, setLastKnown] = useState<HistoryEntry | null>(null);
+  // Which tab the allergy card was opened from (UX7 — it's reachable from
+  // Scan/Verlauf/Profil now, not just Scan), so "Zurück" returns there
+  // instead of always landing back on Scan.
+  const [cardReturnTab, setCardReturnTab] = useState<Tab>("scan");
   // The barcode's prior history entry, set only when the fresh result is a
   // proven *worsening* vs. that entry (see isVerdictWorsening) — informational,
   // it never touches the verdict itself.
@@ -105,6 +109,11 @@ export default function Home() {
 
   const openEntry = useCallback((entry: HistoryEntry) => runLookup(entry.barcode), [runLookup]);
 
+  const openCard = useCallback((from: Tab) => {
+    setCardReturnTab(from);
+    setRoute("karte");
+  }, []);
+
   // If a network-error result is on screen when connectivity returns, retry
   // the same barcode automatically — the household member doesn't have to
   // remember to tap "Erneut prüfen" once they're back near a signal.
@@ -150,6 +159,7 @@ export default function Home() {
         onClear={clear}
         onRemove={remove}
         onRestore={restore}
+        onOpenCard={() => openCard("verlauf")}
         onTab={(t: Tab) => setRoute(t)}
       />
     );
@@ -158,7 +168,9 @@ export default function Home() {
       <PhraseScreen
         P={P}
         selectedAllergens={prefs.selectedAllergens}
-        onBack={() => setRoute("scan")}
+        cardNote={prefs.cardNote}
+        onCardNoteChange={(v) => setPref("cardNote", v)}
+        onBack={() => setRoute(cardReturnTab)}
       />
     );
   } else if (route === "profil") {
@@ -171,6 +183,7 @@ export default function Home() {
           setPref("onboarded", false);
           setRoute("onboarding");
         }}
+        onOpenCard={() => openCard("profil")}
         onTab={(t: Tab) => setRoute(t)}
       />
     );
@@ -195,7 +208,7 @@ export default function Home() {
             history={history}
             onDetected={runLookup}
             onOpen={openEntry}
-            onOpenCard={() => setRoute("karte")}
+            onOpenCard={() => openCard("scan")}
             onTab={(t: Tab) => setRoute(t)}
           />
         </div>

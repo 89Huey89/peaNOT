@@ -17,6 +17,14 @@ export interface Prefs {
   selectedAllergens: string[];
   /** "Größere Schrift" — scales the reading path's base font size; off (normal) by default. */
   fontScale: FontScale;
+  /**
+   * Optional free-text addendum shown below the verified sentence on the
+   * allergy card (F7a) — e.g. "Adrenalin-Pen ist im Rucksack". Purely
+   * informational and never translated: it is stored and shown verbatim in
+   * whatever language it was typed, kept visually apart from the reviewed
+   * lib/phrases.ts sentences, and never fed back into them.
+   */
+  cardNote: string;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -28,6 +36,7 @@ export const DEFAULT_PREFS: Prefs = {
   onboarded: false,
   selectedAllergens: ["peanut"],
   fontScale: "normal",
+  cardNote: "",
 };
 
 function load(): Prefs {

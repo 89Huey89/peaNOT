@@ -272,6 +272,44 @@ export function TabBar({
   );
 }
 
+/**
+ * A compact, icon-only TopBar action (44×44pt tap target, no visible fill —
+ * see .hit44). Used for actions that must be reachable from every tab, not
+ * just one screen's body — e.g. the allergy card (UX7).
+ */
+export function IconButton({
+  P,
+  icon,
+  label,
+  onClick,
+}: {
+  P: Palette;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="tap hit44"
+      onClick={onClick}
+      aria-label={label}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: P.DIM,
+        background: "transparent",
+        border: 0,
+        padding: 0,
+        cursor: "pointer",
+      }}
+    >
+      {icon}
+    </button>
+  );
+}
+
 export function AppShell({ children, P }: { children: ReactNode; P: Palette }) {
   return (
     <div

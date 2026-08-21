@@ -16,6 +16,7 @@ const ENTRY: HistoryEntry = {
 function renderScreen(history: HistoryEntry[] = [ENTRY]) {
   const onRemove = vi.fn();
   const onRestore = vi.fn();
+  const onOpenCard = vi.fn();
   render(
     <HistoryScreen
       P={palette("mustard")}
@@ -24,10 +25,11 @@ function renderScreen(history: HistoryEntry[] = [ENTRY]) {
       onClear={() => {}}
       onRemove={onRemove}
       onRestore={onRestore}
+      onOpenCard={onOpenCard}
       onTab={() => {}}
     />,
   );
-  return { onRemove, onRestore };
+  return { onRemove, onRestore, onOpenCard };
 }
 
 describe("HistoryScreen delete undo", () => {
@@ -81,5 +83,15 @@ describe("HistoryScreen delete undo", () => {
 
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(onRemove).toHaveBeenCalledWith(ENTRY.id);
+  });
+});
+
+describe("HistoryScreen allergy card access (UX7)", () => {
+  it("opens the allergy card from the TopBar with one tap, even with an empty history", () => {
+    const { onOpenCard } = renderScreen([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Allergie-Karte öffnen" }));
+
+    expect(onOpenCard).toHaveBeenCalledTimes(1);
   });
 });

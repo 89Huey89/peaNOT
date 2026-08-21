@@ -11,8 +11,8 @@ import { useOnlineStatus } from "@/components/useOnlineStatus";
 import ManualEntry from "@/components/ManualEntry";
 import ProductSearch from "@/components/ProductSearch";
 import { verdictGlyph } from "@/lib/verdict";
-import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { Keyboard, Languages, Search } from "lucide-react";
+import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
+import { IdCard, Keyboard, Languages, Search } from "lucide-react";
 
 const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
   ssr: false,
@@ -71,37 +71,45 @@ export default function ScanScreen({
       <TopBar
         P={P}
         right={
-          <button
-            type="button"
-            className="tap"
-            onClick={() => onTab("profil")}
-            aria-label={online ? "Profil öffnen" : "Profil öffnen — offline"}
-            style={{
-              display: "flex",
-              gap: 7,
-              alignItems: "center",
-              color: P.DIM,
-              background: "transparent",
-              border: 0,
-              fontFamily: "inherit",
-              padding: "6px 2px",
-              cursor: "pointer",
-            }}
-          >
-            <span
-              aria-hidden="true"
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 99,
-                background: online ? P.GREEN : P.AMBER,
-                boxShadow: `0 0 0 3px ${online ? P.GREEN : P.AMBER}22`,
-              }}
+          <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <IconButton
+              P={P}
+              icon={<IdCard size={18} aria-hidden="true" />}
+              label="Allergie-Karte öffnen"
+              onClick={onOpenCard}
             />
-            <Mono style={{ opacity: 0.7, color: online ? undefined : P.AMBER_TEXT }}>
-              {online ? "live" : "offline"}
-            </Mono>
-          </button>
+            <button
+              type="button"
+              className="tap"
+              onClick={() => onTab("profil")}
+              aria-label={online ? "Profil öffnen" : "Profil öffnen — offline"}
+              style={{
+                display: "flex",
+                gap: 7,
+                alignItems: "center",
+                color: P.DIM,
+                background: "transparent",
+                border: 0,
+                fontFamily: "inherit",
+                padding: "6px 2px",
+                cursor: "pointer",
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 99,
+                  background: online ? P.GREEN : P.AMBER,
+                  boxShadow: `0 0 0 3px ${online ? P.GREEN : P.AMBER}22`,
+                }}
+              />
+              <Mono style={{ opacity: 0.7, color: online ? undefined : P.AMBER_TEXT }}>
+                {online ? "live" : "offline"}
+              </Mono>
+            </button>
+          </div>
         }
       />
 

@@ -3,16 +3,22 @@ import {
   ALLERGEN_KEYS,
   ALLERGEN_TERMS,
   LANG_PHRASES,
+  OPTIONAL_VENUE_LANGS,
   PHRASE_LANGS,
   VENUES,
   allergenList,
   allergenTerm,
   defaultLangCode,
+  hasVenueTranslation,
   phraseFor,
   type VenueKey,
 } from "./phrases";
 
 const VENUE_KEYS = VENUES.map((v) => v.key);
+// The four venues every language must translate directly — "kita" is
+// optional (see OPTIONAL_VENUE_LANGS) and covered by its own describe block
+// below, so the blanket "every venue for every language" test excludes it.
+const CORE_VENUE_KEYS = VENUE_KEYS.filter((k) => !(k in OPTIONAL_VENUE_LANGS));
 
 describe("phrases data", () => {
   it("lists every language exactly once with the required fields", () => {
@@ -25,16 +31,33 @@ describe("phrases data", () => {
     }
   });
 
-  it("has a lead with the {LIST} placeholder and every venue for every language", () => {
+  it("has a lead with the {LIST} placeholder and every core venue for every language", () => {
     for (const lang of PHRASE_LANGS) {
       const lp = LANG_PHRASES[lang.code];
       expect(lp, `missing phrasing for ${lang.code}`).toBeDefined();
       expect(lp?.lead, `${lang.code} lead missing {LIST}`).toContain("{LIST}");
       expect((lp?.sep ?? "").length, `${lang.code} separator missing`).toBeGreaterThan(0);
-      for (const venue of VENUE_KEYS) {
+      for (const venue of CORE_VENUE_KEYS) {
         const text = lp?.venues[venue];
         expect(text, `${lang.code}/${venue} missing`).toBeTruthy();
         expect((text ?? "").trim().length).toBeGreaterThan(20);
+      }
+    }
+  });
+
+  it("covers each optional venue for exactly its documented languages, never a silent gap", () => {
+    for (const [venue, langs] of Object.entries(OPTIONAL_VENUE_LANGS)) {
+      const expected = new Set(langs);
+      for (const lang of PHRASE_LANGS) {
+        const has = hasVenueTranslation(lang.code, venue as VenueKey);
+        expect(
+          has,
+          `${lang.code}/${venue}: expected ${
+            expected.has(lang.code)
+              ? "a dedicated translation (listed in OPTIONAL_VENUE_LANGS)"
+              : "no translation — remove it or add this language to OPTIONAL_VENUE_LANGS"
+          }`,
+        ).toBe(expected.has(lang.code));
       }
     }
   });
@@ -112,6 +135,27 @@ describe("phraseFor", () => {
 
   it("defaults to peanut when no allergens are selected", () => {
     expect(phraseFor("en", "general", [])).toContain("peanuts");
+  });
+
+  it("has a dedicated 'kita' sentence for German and English (F7b)", () => {
+    expect(hasVenueTranslation("de", "kita")).toBe(true);
+    expect(hasVenueTranslation("en", "kita")).toBe(true);
+    const de = phraseFor("de", "kita", ["peanut"]);
+    const en = phraseFor("en", "kita", ["peanut"]);
+    expect(de).not.toBe(phraseFor("de", "general", ["peanut"]));
+    expect(en).not.toBe(phraseFor("en", "general", ["peanut"]));
+    expect(de).toContain("Kind");
+    expect(en).toContain("child");
+  });
+
+  it("falls back to the language's own 'general' sentence for 'kita' everywhere else", () => {
+    // French has no dedicated "kita" sentence: phraseFor must reuse French's
+    // own general venue text, never fall silent and never borrow English.
+    expect(hasVenueTranslation("fr", "kita")).toBe(false);
+    const kitaText = phraseFor("fr", "kita", ["milk"]);
+    const generalText = phraseFor("fr", "general", ["milk"]);
+    expect(kitaText).toBe(generalText);
+    expect(kitaText).not.toContain(LANG_PHRASES.en?.venues.general);
   });
 });
 

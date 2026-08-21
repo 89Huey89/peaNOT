@@ -16,16 +16,18 @@ function setVibrateSupported(supported: boolean) {
 
 function renderScreen(prefs: Prefs) {
   const setPref = vi.fn();
+  const onOpenCard = vi.fn();
   render(
     <ProfileScreen
       P={palette("mustard")}
       prefs={prefs}
       setPref={setPref}
       onReplayOnboarding={() => {}}
+      onOpenCard={onOpenCard}
       onTab={() => {}}
     />,
   );
-  return { setPref };
+  return { setPref, onOpenCard };
 }
 
 describe("ProfileScreen allergen picker", () => {
@@ -92,6 +94,16 @@ describe("ProfileScreen vibration toggle", () => {
 
     fireEvent.click(toggle);
     expect(setPref).toHaveBeenCalledWith("haptic", true);
+  });
+});
+
+describe("ProfileScreen allergy card access (UX7)", () => {
+  it("opens the allergy card from the TopBar with one tap", () => {
+    const { onOpenCard } = renderScreen(DEFAULT_PREFS);
+
+    fireEvent.click(screen.getByRole("button", { name: "Allergie-Karte öffnen" }));
+
+    expect(onOpenCard).toHaveBeenCalledTimes(1);
   });
 });
 

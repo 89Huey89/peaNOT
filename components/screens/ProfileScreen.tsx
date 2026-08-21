@@ -5,8 +5,8 @@ import { ACCENTS, type Accent, type Palette, type ThemeMode } from "@/lib/theme"
 import { ALLERGEN_LIST } from "@/lib/allergens/profile";
 import { FONT_SCALES, FONT_SCALE_LABEL } from "@/lib/fontScale";
 import type { Prefs } from "@/components/usePrefs";
-import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { RotateCcw, User } from "lucide-react";
+import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
+import { IdCard, RotateCcw, User } from "lucide-react";
 
 function Section({
   P,
@@ -159,12 +159,14 @@ export default function ProfileScreen({
   prefs,
   setPref,
   onReplayOnboarding,
+  onOpenCard,
   onTab,
 }: {
   P: Palette;
   prefs: Prefs;
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
   onReplayOnboarding: () => void;
+  onOpenCard: () => void;
   onTab: (t: Tab) => void;
 }) {
   // iOS Safari never shipped navigator.vibrate — checked client-side only, so
@@ -179,7 +181,17 @@ export default function ProfileScreen({
 
   return (
     <AppShell P={P}>
-      <TopBar P={P} />
+      <TopBar
+        P={P}
+        right={
+          <IconButton
+            P={P}
+            icon={<IdCard size={18} aria-hidden="true" />}
+            label="Allergie-Karte öffnen"
+            onClick={onOpenCard}
+          />
+        }
+      />
       <div className="scroll" style={{ flex: 1, overflowY: "auto", padding: "4px 22px 96px" }}>
         <SectionTitle>Dein Profil</SectionTitle>
 

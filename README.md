@@ -123,16 +123,28 @@ Das Ergebnis ist der ganze Screen (Stempel, Belegstelle mit markierter
 
 ## Allergie-Karte (mehrsprachig)
 
-Hinter dem Button **„Allergie-Karte zeigen"** (Scan-Screen) liegt eine Karte zum
-Vorzeigen vor Ort: ein vorformulierter Satz, der die schwere Erdnussallergie
-erklärt und um erdnussfreie Auswahl ohne Verunreinigung bittet. Auswählbar nach
-Ort (Eisdiele, Restaurant, Bäckerei & Café, Allgemein) und Sprache (16 gängige
-Reise-/Weltsprachen, inkl. RTL für Arabisch). Die Startsprache richtet sich nach
-der Gerätesprache; „Groß anzeigen" zeigt den Satz bildschirmfüllend.
+Über das Karten-Symbol in der oberen Leiste (Scan/Verlauf/Profil — ein Tap von
+überall) sowie den Button **„Allergie-Karte zeigen"** (Scan-Screen) erreichbar:
+eine Karte zum Vorzeigen vor Ort mit einem vorformulierten Satz, der die
+gewählte Allergie erklärt und um eine sichere Auswahl ohne Verunreinigung
+bittet. Auswählbar nach Ort (Eisdiele, Restaurant, Bäckerei & Café, Kita &
+Schule, Allgemein) und Sprache (16 gängige Reise-/Weltsprachen, inkl. RTL für
+Arabisch). Die Startsprache richtet sich nach der Gerätesprache; „Groß
+anzeigen" zeigt den Satz bildschirmfüllend, hält per Wake Lock (wo unterstützt)
+den Bildschirm wach und schließt nur über den eigenen Schließen-Button oder
+Escape — nie durch versehentliches Antippen.
 
 Texte liegen in `lib/phrases.ts`; `lib/phrases.test.ts` stellt sicher, dass jede
-gelistete Sprache jeden Ort abdeckt (keine stillen Lücken). Übersetzungen sind
-eine Hilfe, keine Garantie.
+gelistete Sprache jeden Kern-Ort abdeckt (keine stillen Lücken). „Kita &
+Schule" ist bisher nur auf Deutsch/Englisch übersetzt — jede andere Sprache
+fällt dafür bewusst auf ihren eigenen „Allgemein"-Satz zurück (dokumentiert in
+`OPTIONAL_VENUE_LANGS`, ebenfalls testabgedeckt), nie auf eine fremde Sprache
+oder auf Stille. Übersetzungen sind eine Hilfe, keine Garantie.
+
+Optional lässt sich unterhalb der Karte ein **eigener Zusatz** eintragen (z. B.
+„Adrenalin-Pen ist im Rucksack") — reiner Freitext, lokal in
+`prefs.cardNote` gespeichert, nie übersetzt und auf der Karte klar vom
+geprüften Satz abgesetzt.
 
 ## Verlauf & Einstellungen (lokal, ohne Konto)
 

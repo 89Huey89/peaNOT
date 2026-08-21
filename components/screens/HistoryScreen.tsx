@@ -5,8 +5,8 @@ import type { Palette } from "@/lib/theme";
 import { VERDICT, verdictColor, verdictGlyph, type Verdict } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
-import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { X } from "lucide-react";
+import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
+import { IdCard, X } from "lucide-react";
 
 const FILTERS: { label: string; verdict: Verdict | null }[] = [
   { label: "Alle", verdict: null },
@@ -72,6 +72,7 @@ export default function HistoryScreen({
   onClear,
   onRemove,
   onRestore,
+  onOpenCard,
   onTab,
 }: {
   P: Palette;
@@ -80,6 +81,7 @@ export default function HistoryScreen({
   onClear: () => void;
   onRemove: (id: string) => void;
   onRestore: (entry: HistoryEntry) => void;
+  onOpenCard: () => void;
   onTab: (t: Tab) => void;
 }) {
   const [filter, setFilter] = useState<Verdict | null>(null);
@@ -135,26 +137,34 @@ export default function HistoryScreen({
       <TopBar
         P={P}
         right={
-          history.length > 0 ? (
-            <button
-              type="button"
-              className="tap"
-              onClick={() => {
-                if (window.confirm("Gesamten Verlauf löschen?")) onClear();
-              }}
-              style={{
-                background: "transparent",
-                border: 0,
-                color: P.DIM,
-                fontFamily: "inherit",
-                fontSize: 13,
-                fontWeight: 600,
-                padding: "6px 4px",
-              }}
-            >
-              Leeren
-            </button>
-          ) : null
+          <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <IconButton
+              P={P}
+              icon={<IdCard size={18} aria-hidden="true" />}
+              label="Allergie-Karte öffnen"
+              onClick={onOpenCard}
+            />
+            {history.length > 0 ? (
+              <button
+                type="button"
+                className="tap"
+                onClick={() => {
+                  if (window.confirm("Gesamten Verlauf löschen?")) onClear();
+                }}
+                style={{
+                  background: "transparent",
+                  border: 0,
+                  color: P.DIM,
+                  fontFamily: "inherit",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: "6px 4px",
+                }}
+              >
+                Leeren
+              </button>
+            ) : null}
+          </div>
         }
       />
       <div style={{ padding: "4px 22px 0" }}>
