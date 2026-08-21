@@ -98,6 +98,13 @@ export type RecallCheckResult =
   | { status: "ok"; matches: RecallMatch[] }
   | { status: "unavailable" };
 
+/**
+ * Why a result came back KEINE_DATEN, so the UI can tell "the product might
+ * still be findable, try again" (no-data/error) apart from "we looked, there
+ * is nothing under this code" (not-found). Never set for a real verdict.
+ */
+export type KeineDatenKind = "not-found" | "no-data" | "error";
+
 /** Public response shape returned by /api/product/[barcode]. */
 export interface ProductResult {
   barcode: string;
@@ -106,6 +113,8 @@ export interface ProductResult {
   /** Overall verdict across all checked allergens (worst case wins). */
   status: PeanutStatus;
   message?: string;
+  /** Set only alongside a KEINE_DATEN status; see KeineDatenKind. */
+  kind?: KeineDatenKind;
   /** Product photo URL from Open Food Facts, when available. */
   imageUrl?: string | null;
   /** Unix timestamp of the last OFF record edit (not proof of a recipe change). */

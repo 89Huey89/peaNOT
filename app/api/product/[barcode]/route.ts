@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { ProductResult } from "@/lib/types";
+import type { KeineDatenKind, ProductResult } from "@/lib/types";
 import { isValidBarcode, sanitizeBarcode } from "@/lib/barcode";
 import { fetchOffProduct } from "@/lib/off/client";
 import { detectAllergens } from "@/lib/allergens/combine";
@@ -10,8 +10,6 @@ import { checkRecalls } from "@/lib/recalls/check";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type KeineDatenKind = "not-found" | "no-data" | "error";
 
 /** Read the requested allergen keys, whitelist them, default to peanut. */
 function parseProfiles(url: string): AllergenProfile[] {
@@ -96,6 +94,7 @@ export async function GET(
         productName: outcome.productName || null,
         brand: outcome.brand || null,
         status: "KEINE_DATEN",
+        kind: "no-data",
         message: keineDatenMessage("no-data", profiles),
         imageUrl: outcome.imageUrl || null,
         dataLastModified: outcome.dataLastModified,
@@ -110,6 +109,7 @@ export async function GET(
         productName: null,
         brand: null,
         status: "KEINE_DATEN",
+        kind: "not-found",
         message: keineDatenMessage("not-found", profiles),
         caveats: detectCaveats(barcode, "KEINE_DATEN", null),
       };
@@ -120,6 +120,7 @@ export async function GET(
         productName: null,
         brand: null,
         status: "KEINE_DATEN",
+        kind: "error",
         message: keineDatenMessage("error", profiles),
         caveats: detectCaveats(barcode, "KEINE_DATEN", null),
       };

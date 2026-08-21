@@ -8,12 +8,12 @@ import { CAVEATS, hasIdentityCaveat } from "@/lib/caveats";
 import { applyPackMatch } from "@/lib/packmatch";
 import { offProductUrl } from "@/lib/off/link";
 import { usePackMatch } from "@/components/usePackMatch";
-import { getProfiles } from "@/lib/allergens/profile";
+import { getProfiles, type AllergenProfile } from "@/lib/allergens/profile";
 import { beep, vibrate } from "@/lib/feedback";
-import { formatRelative } from "@/lib/time";
+import { formatRelative, isDataStale } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
 import { AppShell, Chip, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
-import { ArrowRight, ExternalLink, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, ExternalLink, RotateCcw, WifiOff, X } from "lucide-react";
 
 function shortEan(ean: string): string {
   return ean.length > 8 ? `${ean.slice(0, 4)}…${ean.slice(-4)}` : ean;
@@ -93,10 +93,55 @@ function highlight(text: string, found: string | null | undefined, P: Palette): 
   );
 }
 
+interface UnknownCardCopy {
+  heading: string;
+  body: string;
+  retryLabel: string;
+  /** A network/server failure gets a distinct, more urgent retry framing —
+   * the product may well be in the database, unlike a genuine not-found. */
+  network: boolean;
+}
+
+/**
+ * Copy for the "no verdict" card, branched by *why* there is no verdict.
+ * Previously every KEINE_DATEN rendered the same "Kein Eintrag gefunden" —
+ * misleading for a transient network/server failure, where the right move is
+ * "try again near a signal", not "give up and read the pack".
+ */
+function unknownCardCopy(result: ProductResult, profiles: AllergenProfile[]): UnknownCardCopy {
+  const subject =
+    profiles.length === 1 && profiles[0]
+      ? `${profiles[0].label} kann`
+      : "Deine Allergene können";
+  if (result.networkError === true || result.kind === "error") {
+    return {
+      heading: "Gerade keine Verbindung",
+      body: `Server oder Verbindung waren gerade nicht erreichbar — das ist kein Ergebnis für dieses Produkt, es kann trotzdem in der Datenbank sein. ${subject} deshalb nicht ausgeschlossen werden.`,
+      retryLabel: "Jetzt erneut prüfen",
+      network: true,
+    };
+  }
+  if (result.kind === "no-data") {
+    return {
+      heading: "Eintrag ohne Zutatenangaben",
+      body: `Dieser Barcode ist in der Datenbank, aber ohne Zutaten- oder Allergenangaben. ${subject} nicht ausgeschlossen werden — im Zweifel das Produkt meiden.`,
+      retryLabel: "Erneut prüfen",
+      network: false,
+    };
+  }
+  return {
+    heading: "Kein Eintrag gefunden",
+    body: `Zu diesem Barcode liegen keine Zutaten- oder Allergendaten vor. ${subject} nicht ausgeschlossen werden — im Zweifel das Produkt meiden.`,
+    retryLabel: "Erneut prüfen",
+    network: false,
+  };
+}
+
 export default function ResultScreen({
   P,
   result,
   lastKnown,
+  worsenedFrom,
   selectedAllergens,
   tracesStrict,
   haptic,
@@ -111,6 +156,9 @@ export default function ResultScreen({
   /** The barcode's most recent history entry from *before* this lookup —
    * shown only alongside a network-error result (see result.networkError). */
   lastKnown: HistoryEntry | null;
+  /** The barcode's prior history entry, set only when this result is a proven
+   * *worsening* vs. that entry — informational, never alters the verdict. */
+  worsenedFrom: HistoryEntry | null;
   selectedAllergens: string[];
   tracesStrict: boolean;
   haptic: boolean;
@@ -121,21 +169,29 @@ export default function ResultScreen({
   onRetry: () => void;
 }) {
   const caveats = result.caveats ?? [];
-  const { answer, answerPackMatch } = usePackMatch(result.barcode);
+  const { answer, answeredAt, answerPackMatch } = usePackMatch(result.barcode);
   const resolved = applyPackMatch(result.status, caveats, answer);
   const verdict = resolveVerdict(resolved.status, resolved.caveats);
   const profiles = getProfiles(selectedAllergens);
   const copy = verdictCopy(verdict, profiles, result.results ?? [], resolved.caveats);
-  const fg = verdictColor(verdict, P);
 
   const isSafe = verdict === "safe";
   const isDanger = verdict === "danger";
   const isTrace = verdict === "trace";
   const isPartial = verdict === "partial";
   const isUnknown = verdict === "unknown";
+  // Strict mode treats a trace like a hit for the alarm — but the visuals
+  // (stamp, frame, verdict color) used to stay amber regardless, so only the
+  // small print said "wie ein Treffer". Tracked separately so the framing
+  // below can go red while the stamp word/category stays "spuren", not "stop".
+  const strictTraceHit = isTrace && tracesStrict;
   // A qualified all-clear stays quiet: only real hits (and traces in strict
   // mode) are worth an alarm.
-  const alarm = isDanger || (isTrace && tracesStrict);
+  const alarm = isDanger || strictTraceHit;
+  // KEINE_DATEN is fail-safe ("could be anything") and reads as a genuine
+  // warning, not a neutral "we don't know" — so it borrows the hit's red,
+  // distinguished from a real hit by shape (dashed ring, not the solid stamp).
+  const fg = strictTraceHit || isUnknown ? P.RED : verdictColor(verdict, P);
 
   // The record can only be matched to the pack in hand by the person holding
   // it — so ask, but only where the barcode itself leaves identity open.
@@ -147,10 +203,23 @@ export default function ResultScreen({
       ? result.message ?? copy.detail
       : copy.detail;
 
+  // Branch the "no verdict" card by *why* (network/server failure vs. a real
+  // not-found/no-data) — see unknownCardCopy for the reasoning.
+  const unknownCard = isUnknown && !mismatch ? unknownCardCopy(result, profiles) : null;
+  const headlineText = unknownCard?.network ? "Gerade keine Verbindung." : copy.headline;
+
   // Warn-only recall comparison: matches add a card, everything else stays a
   // quiet status line — "no match" must never read as "no recall exists".
   const recallMatches =
     result.recall?.status === "ok" ? result.recall.matches : [];
+
+  // A green/amber result is only as good as the record behind it — flag a
+  // record that has not been touched in a long time so the packet in hand
+  // stays the deciding factor, not an old snapshot.
+  const dataStale =
+    (isSafe || isPartial) &&
+    result.dataLastModified != null &&
+    isDataStale(result.dataLastModified);
 
   const headlineRef = useRef<HTMLParagraphElement>(null);
   const [announce, setAnnounce] = useState("");
@@ -178,16 +247,22 @@ export default function ResultScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
 
-  // Announce the verdict to assistive tech. Starting empty and filling in an
-  // effect makes it a live-region *change*, so it is reliably spoken.
+  // Announce the verdict to assistive tech, always assertive: the result
+  // overlay is a dialog over a life-safety verdict, so VoiceOver should speak
+  // it immediately rather than waiting for a pause (as "polite" would). Empty
+  // on mount and filled in an effect makes it a live-region *change*, which is
+  // what actually triggers the announcement.
   useEffect(() => {
+    const worsenNote = worsenedFrom
+      ? `Achtung, Änderung gegenüber dem letzten Scan: zuletzt ${VERDICT[worsenedFrom.verdict].label}, jetzt ${copy.label}. `
+      : "";
     const recallNote =
       recallMatches.length > 0
         ? " Achtung: Eine amtliche Rückruf-Meldung könnte dieses Produkt betreffen."
         : "";
-    setAnnounce(`${copy.title} ${detailText}${recallNote}`);
+    setAnnounce(`${worsenNote}${copy.title} ${detailText}${recallNote}`);
     setImgFailed(false);
-  }, [result, copy.title, detailText, recallMatches.length]);
+  }, [result, copy.title, copy.label, detailText, recallMatches.length, worsenedFrom]);
 
   // Alert the user on a hit (and on traces when strict mode is on).
   useEffect(() => {
@@ -198,18 +273,25 @@ export default function ResultScreen({
 
   const accentBg = isSafe
     ? `${P.GREEN}10`
-    : isDanger
+    : isDanger || strictTraceHit
       ? `${P.RED}10`
       : isTrace || isPartial
         ? `${P.AMBER}12`
-        : `${P.INK}06`;
+        : isUnknown
+          ? `${P.RED}09`
+          : `${P.INK}06`;
   const accentBd = isSafe
     ? P.GREEN
-    : isDanger
+    : isDanger || strictTraceHit
       ? P.RED
       : isTrace || isPartial
         ? P.AMBER
-        : `${P.INK}33`;
+        : isUnknown
+          ? P.RED
+          : `${P.INK}33`;
+  // Unknown keeps a dashed frame (vs. everyone else's solid) so it stays
+  // visually distinct from a real hit even though both are red now.
+  const accentBorderStyle = isUnknown ? "dashed" : "solid";
 
   const traceOnly = (result.traces ?? []).filter(
     (t) => !(result.allergens ?? []).includes(t),
@@ -239,7 +321,10 @@ export default function ResultScreen({
         }
       />
 
-      <p className="sr-only" aria-live={alarm ? "assertive" : "polite"}>
+      {/* Assertive so VoiceOver speaks the verdict as soon as the dialog
+          opens, rather than waiting for a pause as "polite" would — this is
+          a life-safety result, not a routine status update. */}
+      <p className="sr-only" aria-live="assertive">
         {announce}
       </p>
 
@@ -279,6 +364,32 @@ export default function ResultScreen({
           </div>
         ) : null}
 
+        {worsenedFrom ? (
+          <div
+            style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: `${P.RED}10`,
+              border: `1.5px solid ${P.RED}`,
+              fontSize: 12.5,
+              lineHeight: 1.45,
+              display: "flex",
+              gap: 8,
+              alignItems: "flex-start",
+            }}
+          >
+            <AlertTriangle size={15} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1, color: P.RED }} />
+            <div>
+              <Mono style={{ opacity: 0.85, color: P.RED }}>änderung zum letzten scan</Mono>
+              <div style={{ marginTop: 3 }}>
+                Zuletzt als <strong>{VERDICT[worsenedFrom.verdict].label}</strong> gespeichert —
+                jetzt <strong>{copy.label}</strong>.
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <p
           ref={headlineRef}
           tabIndex={-1}
@@ -292,7 +403,7 @@ export default function ResultScreen({
             outline: "none",
           }}
         >
-          {copy.headline}
+          {headlineText}
         </p>
 
         <div
@@ -366,7 +477,7 @@ export default function ResultScreen({
               padding: "18px 14px 16px",
               borderRadius: 14,
               background: accentBg,
-              border: `2px solid ${accentBd}`,
+              border: `2px ${accentBorderStyle} ${accentBd}`,
               position: "relative",
               overflow: "hidden",
             }}
@@ -386,10 +497,14 @@ export default function ResultScreen({
                     width: 88,
                     height: 88,
                     borderRadius: 99,
-                    border: `2px dashed ${P.DIM}`,
+                    // Dashed (vs. the hit stamp's solid double border) keeps
+                    // this red warning visually distinct from a real JA hit,
+                    // fail-safe framing per README even though the color now
+                    // matches.
+                    border: `2px dashed ${P.RED}`,
                     display: "grid",
                     placeItems: "center",
-                    color: P.DIM,
+                    color: P.RED,
                     transform: "rotate(-8deg)",
                     flexShrink: 0,
                   }}
@@ -397,10 +512,17 @@ export default function ResultScreen({
                   <Mono style={{ fontSize: 9 }}>?</Mono>
                 </div>
               ) : (
-                <Stamp verdict={verdict} P={P} />
+                <Stamp verdict={verdict} P={P} colorOverride={strictTraceHit ? P.RED : undefined} />
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <Mono style={{ color: fg }}>{copy.tag}</Mono>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <Mono style={{ color: fg }}>{copy.tag}</Mono>
+                  {strictTraceHit ? (
+                    <Chip tone="bad" P={P}>
+                      Strikt: wie Treffer
+                    </Chip>
+                  ) : null}
+                </div>
                 <div
                   style={{
                     fontFamily: "'Fraunces', serif",
@@ -421,9 +543,17 @@ export default function ResultScreen({
                 >
                   {copy.title}
                 </div>
-                <div style={{ fontSize: 12.5, marginTop: 6, opacity: 0.78, lineHeight: 1.35 }}>
+                <div
+                  style={{
+                    fontSize: 12.5,
+                    marginTop: 6,
+                    opacity: isUnknown ? 0.92 : 0.78,
+                    lineHeight: 1.35,
+                    color: isUnknown ? P.RED : undefined,
+                  }}
+                >
                   {detailText}
-                  {isTrace && tracesStrict ? " Im Strikt-Modus wie ein Treffer behandelt." : ""}
+                  {strictTraceHit ? " Im Strikt-Modus wie ein Treffer behandelt." : ""}
                 </div>
               </div>
             </div>
@@ -602,14 +732,16 @@ export default function ResultScreen({
                 border: `1.5px solid ${mismatch ? P.RED : P.GREEN}55`,
               }}
             >
-              <Mono style={{ opacity: 0.65 }}>gegencheck · von dir</Mono>
+              <Mono style={{ opacity: 0.65 }}>
+                gegencheck · von dir{answeredAt ? ` · ${formatRelative(answeredAt)}` : ""}
+              </Mono>
               <div style={{ fontWeight: 700, fontSize: 13.5, marginTop: 4 }}>
                 {mismatch ? "Andere Packung" : "Passt zu deiner Packung"}
               </div>
               <div style={{ fontSize: 12.5, marginTop: 3, opacity: 0.82, lineHeight: 1.45 }}>
                 {mismatch
                   ? "Du hast angegeben, dass der Eintrag nicht zu deinem Produkt gehört. Damit ist das Ergebnis hinfällig — es zählt die Zutatenliste auf der Verpackung."
-                  : "Du hast den Eintrag deiner Packung zugeordnet. Beim nächsten Scan dieses Codes gilt die Antwort weiter."}
+                  : "Du hast den Eintrag deiner Packung zugeordnet. Beim nächsten Scan dieses Codes gilt die Antwort weiter — für 90 Tage, danach wird sicherheitshalber erneut gefragt."}
               </div>
               {mismatch ? (
                 <div>
@@ -767,13 +899,15 @@ export default function ResultScreen({
                 marginTop: 12,
                 padding: "10px 12px",
                 borderRadius: 10,
-                background: `${P.ACCENT}0D`,
-                border: `1px solid ${P.ACCENT}55`,
+                background: dataStale ? `${P.AMBER}14` : `${P.ACCENT}0D`,
+                border: `1px solid ${dataStale ? P.AMBER : `${P.ACCENT}55`}`,
                 fontSize: 12.5,
                 lineHeight: 1.45,
               }}
             >
-              <Mono style={{ opacity: 0.65 }}>datenstand · open food facts</Mono>
+              <Mono style={{ opacity: 0.65, color: dataStale ? P.AMBER : undefined }}>
+                datenstand · open food facts
+              </Mono>
               <div style={{ marginTop: 4 }}>
                 {result.dataLastModified
                   ? `Zuletzt bearbeitet: ${formatDataDate(result.dataLastModified)}`
@@ -784,6 +918,12 @@ export default function ResultScreen({
                 Eine neue Revision kann auch nur ein Foto oder eine Textkorrektur sein.
                 Sie bestätigt keine neue Rezeptur. Die aktuelle Packung ist maßgeblich.
               </div>
+              {dataStale ? (
+                <div style={{ marginTop: 6, fontWeight: 700, opacity: 1 }}>
+                  Dieser Eintrag wurde seit über 2 Jahren nicht bearbeitet — die Zutatenliste
+                  auf der Packung ist deshalb besonders wichtig.
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -806,25 +946,21 @@ export default function ResultScreen({
             </div>
           ) : null}
 
-          {isUnknown && !mismatch ? (
+          {unknownCard ? (
             <div
               style={{
                 marginTop: 14,
                 padding: "12px 14px",
                 borderRadius: 10,
-                background: `${P.ACCENT}10`,
-                border: `1.5px dashed ${P.ACCENT}`,
+                background: unknownCard.network ? `${P.RED}0D` : `${P.ACCENT}10`,
+                border: `1.5px dashed ${unknownCard.network ? P.RED : P.ACCENT}`,
               }}
             >
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
-                Kein Eintrag gefunden
+                {unknownCard.heading}
               </div>
               <div style={{ fontSize: 12.5, lineHeight: 1.45, opacity: 0.85 }}>
-                Zu diesem Barcode liegen keine Zutaten- oder Allergendaten vor.{" "}
-                {profiles.length === 1 && profiles[0]
-                  ? `${profiles[0].label} kann`
-                  : "Deine Allergene können"}{" "}
-                nicht ausgeschlossen werden – im Zweifel das Produkt meiden.
+                {unknownCard.body}
               </div>
               <button
                 type="button"
@@ -834,9 +970,9 @@ export default function ResultScreen({
                 style={{
                   marginTop: 12,
                   width: "100%",
-                  background: "transparent",
-                  color: P.INK,
-                  border: `1.5px solid ${P.ACCENT}`,
+                  background: unknownCard.network ? P.RED : "transparent",
+                  color: unknownCard.network ? "#fff" : P.INK,
+                  border: `1.5px solid ${unknownCard.network ? P.RED : P.ACCENT}`,
                   borderRadius: 99,
                   padding: "10px 14px",
                   fontWeight: 700,
@@ -845,7 +981,18 @@ export default function ResultScreen({
                   opacity: loading ? 0.6 : 1,
                 }}
               >
-                {loading ? "Prüfe erneut…" : <><RotateCcw size={14} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 6 }} />Erneut prüfen</>}
+                {loading ? (
+                  "Prüfe erneut…"
+                ) : (
+                  <>
+                    {unknownCard.network ? (
+                      <WifiOff size={14} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 6 }} />
+                    ) : (
+                      <RotateCcw size={14} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 6 }} />
+                    )}
+                    {unknownCard.retryLabel}
+                  </>
+                )}
               </button>
             </div>
           ) : null}

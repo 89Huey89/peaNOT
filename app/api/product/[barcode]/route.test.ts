@@ -170,6 +170,7 @@ describe("GET /api/product/[barcode]", () => {
     const { status, body } = await call("4011200296908");
     expect(status).toBe(200);
     expect(body.status).toBe("KEINE_DATEN");
+    expect(body.kind).toBe("no-data");
     expect(body.productName).toBe("Mystery");
     expect(body.message).toBeTruthy();
   });
@@ -180,16 +181,32 @@ describe("GET /api/product/[barcode]", () => {
     const { status, body } = await call("0000000000000");
     expect(status).toBe(200);
     expect(body.status).toBe("KEINE_DATEN");
+    expect(body.kind).toBe("not-found");
     expect(body.productName).toBeNull();
   });
 
-  it("maps errors to KEINE_DATEN, never NEIN", async () => {
+  it("maps errors to KEINE_DATEN, never NEIN, and marks the kind as error", async () => {
     mockOutcome({ kind: "error", cause: "network" });
 
     const { status, body } = await call("4011200296908");
     expect(status).toBe(200);
     expect(body.status).toBe("KEINE_DATEN");
     expect(body.status).not.toBe("NEIN");
+    expect(body.kind).toBe("error");
+  });
+
+  it("never sets kind on a real (non-KEINE_DATEN) verdict", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "Milk",
+      brand: "ACME",
+      imageUrl: "",
+      fields: fields({ allergens_tags: ["en:milk"], ingredients_text: "Milch" }),
+    });
+
+    const { body } = await call("4011200296908");
+    expect(body.status).toBe("NEIN");
+    expect(body.kind).toBeUndefined();
   });
 
   it("returns 400 for invalid barcodes without calling the client", async () => {

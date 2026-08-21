@@ -38,21 +38,30 @@ function persist(entries: HistoryEntry[]) {
   }
 }
 
-function toEntry(result: ProductResult, ts: number): HistoryEntry {
-  // A pack comparison the user made earlier applies to this scan too, so the
-  // list shows the verdict they actually ended up with.
+/**
+ * Resolve a lookup result to the verdict shown in the history list — folds in
+ * any remembered pack-match answer, exactly like the result screen. Exported
+ * so a caller that needs "the verdict this result is about to be recorded
+ * as" *before* record() runs (the worsening-vs-history check in app/page.tsx)
+ * uses the identical resolution instead of a second, drifting copy of it.
+ */
+export function resolveHistoryVerdict(result: ProductResult): Verdict {
   const resolved = applyPackMatch(
     result.status,
     result.caveats ?? [],
     readPackMatch(result.barcode),
   );
+  return resolveVerdict(resolved.status, resolved.caveats);
+}
+
+function toEntry(result: ProductResult, ts: number): HistoryEntry {
   return {
     id: `h_${ts}_${result.barcode}`,
     ts,
     barcode: result.barcode,
     name: result.productName ?? "Unbekanntes Produkt",
     brand: result.brand ?? "—",
-    verdict: resolveVerdict(resolved.status, resolved.caveats),
+    verdict: resolveHistoryVerdict(result),
   };
 }
 

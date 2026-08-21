@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { palette } from "@/lib/theme";
 import { unlockAudio } from "@/lib/feedback";
+import { isVerdictWorsening } from "@/lib/verdict";
 import { useProductLookup } from "@/components/useProductLookup";
 import { usePrefs } from "@/components/usePrefs";
-import { useHistory, type HistoryEntry } from "@/components/useHistory";
+import { useHistory, resolveHistoryVerdict, type HistoryEntry } from "@/components/useHistory";
 import { Logo, type Tab } from "@/components/ui";
 import OnboardingScreen from "@/components/screens/OnboardingScreen";
 import ScanScreen from "@/components/screens/ScanScreen";
@@ -24,6 +25,10 @@ export default function Home() {
   const [route, setRoute] = useState<Route | null>(null);
   const [systemDark, setSystemDark] = useState(false);
   const [lastKnown, setLastKnown] = useState<HistoryEntry | null>(null);
+  // The barcode's prior history entry, set only when the fresh result is a
+  // proven *worsening* vs. that entry (see isVerdictWorsening) — informational,
+  // it never touches the verdict itself.
+  const [worsenedFrom, setWorsenedFrom] = useState<HistoryEntry | null>(null);
   const bootstrapped = useRef(false);
 
   // Resolve the "system" theme option and keep it in sync with the OS setting.
@@ -79,8 +84,17 @@ export default function Home() {
       const previous = history.find((h) => h.barcode === barcode) ?? null;
       const r = await lookup(barcode, prefs.selectedAllergens, opts);
       if (r) {
+        // Compare against the prior scan of this exact barcode before record()
+        // can dedupe it away — the classic allergy-accident case is "that was
+        // safe last time", so a real worsening gets a prominent warning
+        // instead of relying on a stressed parent's memory.
+        const worsened =
+          previous && isVerdictWorsening(previous.verdict, resolveHistoryVerdict(r))
+            ? previous
+            : null;
         record(r);
         setLastKnown(previous);
+        setWorsenedFrom(worsened);
         setRoute("result");
       }
     },
@@ -160,26 +174,39 @@ export default function Home() {
   } else {
     // scan + result share a mounted ScanScreen so the camera stream stays alive;
     // the result is layered on top instead of swapping screens.
+    const resultOpen = route === "result" && !!result;
     screen = (
       <>
-        <ScanScreen
-          P={P}
-          loading={loading}
-          paused={loading || route === "result"}
-          haptic={prefs.haptic}
-          sound={prefs.sound}
-          history={history}
-          onDetected={runLookup}
-          onOpen={openEntry}
-          onOpenCard={() => setRoute("karte")}
-          onTab={(t: Tab) => setRoute(t)}
-        />
-        {route === "result" && result ? (
-          <div style={{ position: "absolute", inset: 0, zIndex: 30 }}>
+        {/* inert freezes focus/AT navigation and pointer events in the
+            background while the result dialog is open — without it VoiceOver
+            can wander into scanner controls hidden behind the verdict.
+            display:contents keeps the wrapper out of the layout so ScanScreen
+            still gets .device's real height through the percentage chain. */}
+        <div inert={resultOpen || undefined} style={{ display: "contents" }}>
+          <ScanScreen
+            P={P}
+            loading={loading}
+            paused={loading || route === "result"}
+            haptic={prefs.haptic}
+            sound={prefs.sound}
+            history={history}
+            onDetected={runLookup}
+            onOpen={openEntry}
+            onOpenCard={() => setRoute("karte")}
+            onTab={(t: Tab) => setRoute(t)}
+          />
+        </div>
+        {resultOpen ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ position: "absolute", inset: 0, zIndex: 30 }}
+          >
             <ResultScreen
               P={P}
               result={result}
               lastKnown={lastKnown}
+              worsenedFrom={worsenedFrom}
               selectedAllergens={prefs.selectedAllergens}
               tracesStrict={prefs.tracesStrict}
               haptic={prefs.haptic}

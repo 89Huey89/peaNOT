@@ -58,7 +58,10 @@ Die Antwort wird pro Barcode lokal gemerkt (`peanot.packmatch.v1`, max. 200
 Einträge), gilt also beim nächsten Scan desselben Codes sofort — auch im
 Verlauf. Gefragt wird nur bei Identitäts-Vorbehalt, damit die Frage nicht zur
 Reflex-Bestätigung verkommt. Auch hier gilt fail-safe: eine Antwort kann ein
-`JA`/`SPUREN` niemals entkräften.
+`JA`/`SPUREN` niemals entkräften. Ein **Ja** verfällt nach 90 Tagen und wird
+dann erneut gefragt — Handels-Eigencodes sind genau dafür berüchtigt, dass
+derselbe Code später ein anderes Produkt bezeichnet. Ein **Nein** gilt fort,
+bis es zurückgenommen wird (fail-safe).
 
 Wo peaNOT sagt, dass seine Daten falsch oder unvollständig sind, verlinkt es den
 Eintrag bei Open Food Facts (`lib/off/link.ts`) — bei gemeldeter Abweichung zum

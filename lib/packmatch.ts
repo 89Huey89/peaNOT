@@ -7,9 +7,17 @@ export type PackMatch = "match" | "mismatch";
 const STORAGE_KEY = "peanot.packmatch.v1";
 const MAX_ENTRIES = 200;
 
-interface StoredAnswer {
+// A "match" answer only vouches for the specific pack the user held in their
+// hand *then* — it must not stand in forever for a restricted-circulation
+// code, which can legitimately point at a different product later (the exact
+// risk lib/caveats.ts warns about). So it expires and the identity question
+// is asked again. A "mismatch" carries no such risk — nothing unsafe follows
+// from continuing to distrust a record — so it never expires (fail-safe).
+const MATCH_EXPIRY_MS = 90 * 24 * 60 * 60 * 1000;
+
+export interface StoredAnswer {
   value: PackMatch;
-  /** Epoch milliseconds, used to prune the oldest answers. */
+  /** Epoch milliseconds, used to prune the oldest answers and to age out "match". */
   ts: number;
 }
 
@@ -55,9 +63,24 @@ function prune(store: Store): Store {
   );
 }
 
-/** The remembered answer for a barcode, or null when never answered. */
-export function readPackMatch(barcode: string): PackMatch | null {
-  return load()[barcode]?.value ?? null;
+/**
+ * The remembered answer for a barcode with its timestamp, or null when never
+ * answered *or* when a "match" answer has aged out (see MATCH_EXPIRY_MS). A
+ * "mismatch" is returned regardless of age.
+ */
+export function readPackMatchEntry(
+  barcode: string,
+  now: number = Date.now(),
+): StoredAnswer | null {
+  const entry = load()[barcode];
+  if (!entry) return null;
+  if (entry.value === "match" && now - entry.ts > MATCH_EXPIRY_MS) return null;
+  return entry;
+}
+
+/** The remembered answer for a barcode, or null when never answered or expired. */
+export function readPackMatch(barcode: string, now: number = Date.now()): PackMatch | null {
+  return readPackMatchEntry(barcode, now)?.value ?? null;
 }
 
 /** Remember an answer, or forget it again when passed null. */

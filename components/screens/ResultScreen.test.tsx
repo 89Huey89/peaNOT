@@ -19,14 +19,16 @@ const CLEAN_RESULT: ProductResult = {
 function renderResult(
   result: ProductResult = CLEAN_RESULT,
   lastKnown: HistoryEntry | null = null,
+  opts: { worsenedFrom?: HistoryEntry | null; tracesStrict?: boolean } = {},
 ) {
   render(
     <ResultScreen
       P={palette("mustard")}
       result={result}
       lastKnown={lastKnown}
+      worsenedFrom={opts.worsenedFrom ?? null}
       selectedAllergens={["peanut"]}
-      tracesStrict={false}
+      tracesStrict={opts.tracesStrict ?? false}
       haptic={false}
       sound={false}
       loading={false}
@@ -280,5 +282,216 @@ describe("ResultScreen network-error last known verdict", () => {
     );
 
     expect(screen.queryByText(/aktuell nicht verifizierbar/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ResultScreen unknown-result copy by kind", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  const BASE: ProductResult = {
+    barcode: "4011200296908",
+    productName: null,
+    brand: null,
+    status: "KEINE_DATEN",
+  };
+
+  it("shows the not-found framing for a definitive not-found", () => {
+    renderResult({ ...BASE, kind: "not-found", message: "Produkt nicht in der Datenbank gefunden." });
+
+    expect(screen.getByText("Kein Eintrag gefunden")).toBeInTheDocument();
+  });
+
+  it("shows a distinct framing for a record without ingredient data", () => {
+    renderResult({ ...BASE, kind: "no-data", message: "Keine Zutaten- oder Allergendaten vorhanden." });
+
+    expect(screen.getByText("Eintrag ohne Zutatenangaben")).toBeInTheDocument();
+    expect(screen.queryByText("Kein Eintrag gefunden")).not.toBeInTheDocument();
+  });
+
+  it("shows an urgent, retry-emphasized framing for a server error", () => {
+    renderResult({ ...BASE, kind: "error", message: "Daten konnten nicht abgerufen werden." });
+
+    expect(screen.getByText("Gerade keine Verbindung")).toBeInTheDocument();
+    expect(screen.getByText("Gerade keine Verbindung.")).toBeInTheDocument(); // the headline
+    expect(screen.getByRole("button", { name: /Jetzt erneut prüfen/ })).toBeInTheDocument();
+  });
+
+  it("treats the client-side network fallback the same as a server error", () => {
+    renderResult({ ...BASE, networkError: true, message: "Netzwerkfehler." });
+
+    expect(screen.getByText("Gerade keine Verbindung")).toBeInTheDocument();
+  });
+
+  it("does not show a branded unknown card while a pack mismatch is in effect", () => {
+    window.localStorage.setItem(
+      "peanot.packmatch.v1",
+      JSON.stringify({ "20137946": { value: "mismatch", ts: 1 } }),
+    );
+    renderResult(CLEAN_RESULT);
+
+    expect(screen.queryByText("Kein Eintrag gefunden")).not.toBeInTheDocument();
+    expect(screen.getByText("Andere Packung")).toBeInTheDocument();
+  });
+});
+
+describe("ResultScreen strict-mode traces", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  const TRACE_RESULT: ProductResult = {
+    barcode: "4011200296908",
+    productName: "Keks",
+    brand: "ACME",
+    status: "SPUREN",
+    ingredients: "Mehl, kann Spuren von Erdnuss enthalten",
+    found: null,
+  };
+
+  it("stays amber, with no strict chip, when strict mode is off", () => {
+    renderResult(TRACE_RESULT, null, { tracesStrict: false });
+
+    expect(screen.queryByText("Strikt: wie Treffer")).not.toBeInTheDocument();
+    expect(screen.queryByText(/wie ein Treffer behandelt/)).not.toBeInTheDocument();
+  });
+
+  it("shows the strict chip and note when strict mode is on", () => {
+    renderResult(TRACE_RESULT, null, { tracesStrict: true });
+
+    expect(screen.getByText("Strikt: wie Treffer")).toBeInTheDocument();
+    expect(screen.getByText(/wie ein Treffer behandelt/)).toBeInTheDocument();
+    // The category itself must stay legible, not be replaced by the hit word.
+    expect(screen.getByText("Spuren möglich.")).toBeInTheDocument();
+  });
+});
+
+describe("ResultScreen data-age warning", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("adds an age warning to an old record on an otherwise clean result", () => {
+    const threeYearsAgo = Math.floor(Date.now() / 1000) - 3 * 365 * 24 * 60 * 60;
+    renderResult({
+      barcode: "4011200296908",
+      productName: "Keks",
+      brand: "ACME",
+      status: "NEIN",
+      ingredients: "Mehl",
+      dataLastModified: threeYearsAgo,
+    });
+
+    expect(screen.getByText(/seit über 2 Jahren nicht bearbeitet/)).toBeInTheDocument();
+  });
+
+  it("does not warn about a recently edited record", () => {
+    const lastWeek = Math.floor(Date.now() / 1000) - 7 * 24 * 60 * 60;
+    renderResult({
+      barcode: "4011200296908",
+      productName: "Keks",
+      brand: "ACME",
+      status: "NEIN",
+      ingredients: "Mehl",
+      dataLastModified: lastWeek,
+    });
+
+    expect(screen.queryByText(/seit über 2 Jahren nicht bearbeitet/)).not.toBeInTheDocument();
+  });
+
+  it("does not warn on a hit, even with a very old record", () => {
+    const threeYearsAgo = Math.floor(Date.now() / 1000) - 3 * 365 * 24 * 60 * 60;
+    renderResult({
+      barcode: "4011200296908",
+      productName: "Riegel",
+      brand: "ACME",
+      status: "JA",
+      ingredients: "Erdnüsse",
+      found: "Erdnüsse",
+      dataLastModified: threeYearsAgo,
+    });
+
+    expect(screen.queryByText(/seit über 2 Jahren nicht bearbeitet/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ResultScreen verdict-worsening warning", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  const PRIOR_SAFE: HistoryEntry = {
+    id: "h_1_4011200296908",
+    ts: Date.now() - 30 * 86_400_000,
+    barcode: "4011200296908",
+    name: "Riegel",
+    brand: "ACME",
+    verdict: "safe",
+  };
+
+  it("shows a prominent strip when the caller flags a worsening", () => {
+    renderResult(
+      {
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "JA",
+        ingredients: "Erdnüsse",
+        found: "Erdnüsse",
+      },
+      null,
+      { worsenedFrom: PRIOR_SAFE },
+    );
+
+    expect(screen.getByText(/Zuletzt als/)).toBeInTheDocument();
+    expect(screen.getAllByText("Sicher").length).toBeGreaterThan(0);
+  });
+
+  it("shows nothing when there is nothing to compare against", () => {
+    renderResult(
+      {
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "JA",
+        ingredients: "Erdnüsse",
+        found: "Erdnüsse",
+      },
+      null,
+      { worsenedFrom: null },
+    );
+
+    expect(screen.queryByText(/Zuletzt als/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ResultScreen pack-match answer age", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("shows how long ago the stored answer was given", () => {
+    window.localStorage.setItem(
+      "peanot.packmatch.v1",
+      JSON.stringify({ "20137946": { value: "match", ts: Date.now() - 10_000 } }),
+    );
+
+    renderResult();
+
+    expect(screen.getByText(/gegencheck · von dir · Gerade eben/)).toBeInTheDocument();
+    expect(screen.getByText(/für 90 Tage/)).toBeInTheDocument();
+  });
+
+  it("asks again once a stored 'match' answer has aged past 90 days", () => {
+    window.localStorage.setItem(
+      "peanot.packmatch.v1",
+      JSON.stringify({ "20137946": { value: "match", ts: Date.now() - 100 * 86_400_000 } }),
+    );
+
+    renderResult();
+
+    expect(screen.getByText("Passt das zu deiner Packung?")).toBeInTheDocument();
+    expect(screen.queryByText("Passt zu deiner Packung")).not.toBeInTheDocument();
   });
 });

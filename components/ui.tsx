@@ -96,12 +96,16 @@ export function Stamp({
   verdict,
   P,
   animate = true,
+  colorOverride,
 }: {
   verdict: Verdict;
   P: Palette;
   animate?: boolean;
+  /** Recolor the stamp without changing its word/category — used when strict
+   * mode treats a trace like a hit but "spuren" must stay legible. */
+  colorOverride?: string;
 }) {
-  const fg = verdictColor(verdict, P);
+  const fg = colorOverride ?? verdictColor(verdict, P);
   const { stampWord, stampSub } = VERDICT[verdict];
   return (
     <div
