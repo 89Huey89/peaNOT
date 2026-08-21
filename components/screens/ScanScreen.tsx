@@ -7,6 +7,7 @@ import { verdictColor } from "@/lib/verdict";
 import { VERDICT } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
+import { useOnlineStatus } from "@/components/useOnlineStatus";
 import ManualEntry from "@/components/ManualEntry";
 import ProductSearch from "@/components/ProductSearch";
 import { verdictGlyph } from "@/lib/verdict";
@@ -53,6 +54,7 @@ export default function ScanScreen({
   const [searchOpen, setSearchOpen] = useState(false);
   const manualPanelRef = useRef<HTMLDivElement>(null);
   const searchPanelRef = useRef<HTMLDivElement>(null);
+  const online = useOnlineStatus();
 
   // Bring a just-opened panel into view so its form isn't left below the fold.
   useEffect(() => {
@@ -73,7 +75,7 @@ export default function ScanScreen({
             type="button"
             className="tap"
             onClick={() => onTab("profil")}
-            aria-label="Profil öffnen"
+            aria-label={online ? "Profil öffnen" : "Profil öffnen — offline"}
             style={{
               display: "flex",
               gap: 7,
@@ -87,15 +89,18 @@ export default function ScanScreen({
             }}
           >
             <span
+              aria-hidden="true"
               style={{
                 width: 8,
                 height: 8,
                 borderRadius: 99,
-                background: P.GREEN,
-                boxShadow: `0 0 0 3px ${P.GREEN}22`,
+                background: online ? P.GREEN : P.AMBER,
+                boxShadow: `0 0 0 3px ${online ? P.GREEN : P.AMBER}22`,
               }}
             />
-            <Mono style={{ opacity: 0.7 }}>live</Mono>
+            <Mono style={{ opacity: 0.7, color: online ? undefined : P.AMBER }}>
+              {online ? "live" : "offline"}
+            </Mono>
           </button>
         }
       />

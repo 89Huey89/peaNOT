@@ -132,4 +132,18 @@ export interface ProductResult {
   allergens?: string[];
   /** German labels for allergens flagged as possible traces. */
   traces?: string[];
+  /**
+   * Client-only annotation: set when this response was served by the service
+   * worker from its offline cache rather than a live fetch (X-Peanot-Cache /
+   * X-Peanot-Cached-At in public/sw.js). ISO timestamp of the original fetch,
+   * never set by the API itself. Purely informational — never changes status.
+   */
+  cachedAt?: string;
+  /**
+   * Client-only annotation: set when the lookup request itself never reached
+   * the app's own API (offline with nothing cached, aborted, etc.). Set by
+   * components/useProductLookup.ts, never by the API. Distinguishes this
+   * client-side fail-safe fallback from a server-reported KEINE_DATEN.
+   */
+  networkError?: boolean;
 }

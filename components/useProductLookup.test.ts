@@ -14,8 +14,11 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function jsonResponse(body: ProductResult) {
-  return { json: async () => body } as unknown as Response;
+function jsonResponse(body: ProductResult, headers?: Record<string, string>) {
+  return {
+    json: async () => body,
+    headers: headers ? new Headers(headers) : undefined,
+  } as unknown as Response;
 }
 
 describe("useProductLookup", () => {
@@ -73,6 +76,74 @@ describe("useProductLookup", () => {
 
     expect(result.current.result?.status).toBe("KEINE_DATEN");
     expect(result.current.result?.status).not.toBe("NEIN");
+    // Marks it as a client-side fallback, distinct from a server KEINE_DATEN.
+    expect(result.current.result?.networkError).toBe(true);
+  });
+
+  it("sends ?fresh=1 with cache:'no-store' for a fresh lookup", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ barcode: "111", productName: "Bar", brand: null, status: "NEIN" }),
+    );
+
+    const { result } = renderHook(() => useProductLookup());
+    await act(async () => {
+      await result.current.lookup("111", [], { fresh: true });
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/product/111?fresh=1",
+      expect.objectContaining({ cache: "no-store" }),
+    );
+  });
+
+  it("bypasses the session cache for a fresh lookup", async () => {
+    const product: ProductResult = {
+      barcode: "111",
+      productName: "Bar",
+      brand: "ACME",
+      status: "NEIN",
+    };
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(product));
+
+    const { result } = renderHook(() => useProductLookup());
+    await act(async () => {
+      await result.current.lookup("111");
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.lookup("111", [], { fresh: true });
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks a result served from the service worker's offline cache", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse(
+        { barcode: "111", productName: "Bar", brand: "ACME", status: "NEIN" },
+        { "X-Peanot-Cache": "1", "X-Peanot-Cached-At": "2026-08-01T10:00:00.000Z" },
+      ),
+    );
+
+    const { result } = renderHook(() => useProductLookup());
+    await act(async () => {
+      await result.current.lookup("111");
+    });
+
+    expect(result.current.result?.cachedAt).toBe("2026-08-01T10:00:00.000Z");
+  });
+
+  it("does not mark a normal, non-cached response", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ barcode: "111", productName: "Bar", brand: "ACME", status: "NEIN" }),
+    );
+
+    const { result } = renderHook(() => useProductLookup());
+    await act(async () => {
+      await result.current.lookup("111");
+    });
+
+    expect(result.current.result?.cachedAt).toBeUndefined();
   });
 
   it("ignores a stale response when a newer lookup finishes first", async () => {

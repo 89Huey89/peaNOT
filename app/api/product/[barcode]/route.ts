@@ -23,6 +23,11 @@ function parseProfiles(url: string): AllergenProfile[] {
   return profiles.length > 0 ? profiles : getProfiles(["peanut"]);
 }
 
+/** The manual "Erneut prüfen" retry sends ?fresh=1 to bypass the OFF data cache. */
+function isFreshRequest(url: string): boolean {
+  return new URL(url).searchParams.get("fresh") === "1";
+}
+
 function keineDatenMessage(
   kind: KeineDatenKind,
   profiles: AllergenProfile[],
@@ -51,7 +56,7 @@ export async function GET(
   }
 
   const profiles = parseProfiles(request.url);
-  const outcome = await fetchOffProduct(barcode);
+  const outcome = await fetchOffProduct(barcode, { fresh: isFreshRequest(request.url) });
 
   // Recall notices carry names, not barcodes, so the comparison needs the OFF
   // record first — and is skipped entirely when there is no name to compare.
@@ -121,5 +126,11 @@ export async function GET(
       break;
   }
 
-  return NextResponse.json(result, { status: 200 });
+  // A transient OFF failure (network/timeout/parse/HTTP error) is not a real
+  // answer — mark it so the service worker never caches it (public/sw.js).
+  // Status stays 200: the client contract parses the JSON body regardless.
+  const headers: HeadersInit =
+    outcome.kind === "error" ? { "X-Peanot-Transient": "1" } : {};
+
+  return NextResponse.json(result, { status: 200, headers });
 }

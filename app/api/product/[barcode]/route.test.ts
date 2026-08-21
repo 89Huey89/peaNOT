@@ -21,12 +21,17 @@ function fields(partial: Partial<OffProductFields> = {}): OffProductFields {
 async function call(
   barcode: string,
   allergens?: string[],
-): Promise<{ status: number; body: ProductResult & { error?: string } }> {
-  const query = allergens ? `?a=${allergens.join(",")}` : "";
-  const res = await GET(new Request(`http://localhost/api/product/${barcode}${query}`), {
-    params: Promise.resolve({ barcode }),
-  });
-  return { status: res.status, body: await res.json() };
+  extra?: Record<string, string>,
+): Promise<{ status: number; body: ProductResult & { error?: string }; headers: Headers }> {
+  const params = new URLSearchParams();
+  if (allergens) params.set("a", allergens.join(","));
+  for (const [key, value] of Object.entries(extra ?? {})) params.set(key, value);
+  const query = params.toString();
+  const res = await GET(
+    new Request(`http://localhost/api/product/${barcode}${query ? `?${query}` : ""}`),
+    { params: Promise.resolve({ barcode }) },
+  );
+  return { status: res.status, body: await res.json(), headers: res.headers };
 }
 
 function mockOutcome(outcome: OffFetchOutcome) {
@@ -311,5 +316,47 @@ describe("GET /api/product/[barcode]", () => {
 
     const { body } = await call("4011200296908", ["milk"]);
     expect(body.message).toContain("Milch");
+  });
+
+  it("requests an ordinary (non-fresh) OFF fetch by default", async () => {
+    mockOutcome({ kind: "not-found" });
+
+    await call("4011200296908");
+    expect(fetchOffProduct).toHaveBeenCalledWith("4011200296908", { fresh: false });
+  });
+
+  it("passes fresh:true through to the OFF client for a manual retry", async () => {
+    mockOutcome({ kind: "not-found" });
+
+    await call("4011200296908", undefined, { fresh: "1" });
+    expect(fetchOffProduct).toHaveBeenCalledWith("4011200296908", { fresh: true });
+  });
+
+  it("marks a transient OFF failure so the service worker never caches it", async () => {
+    mockOutcome({ kind: "error", cause: "network" });
+
+    const { status, headers } = await call("4011200296908");
+    expect(status).toBe(200); // client contract: always 200, header signals transience
+    expect(headers.get("X-Peanot-Transient")).toBe("1");
+  });
+
+  it("does not mark a definitive not-found result as transient", async () => {
+    mockOutcome({ kind: "not-found" });
+
+    const { headers } = await call("4011200296908");
+    expect(headers.get("X-Peanot-Transient")).toBeNull();
+  });
+
+  it("does not mark a found result as transient", async () => {
+    mockOutcome({
+      kind: "found",
+      productName: "Milk",
+      brand: "ACME",
+      imageUrl: "",
+      fields: fields({ allergens_tags: ["en:milk"], ingredients_text: "Milch" }),
+    });
+
+    const { headers } = await call("4011200296908");
+    expect(headers.get("X-Peanot-Transient")).toBeNull();
   });
 });

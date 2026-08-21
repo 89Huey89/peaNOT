@@ -139,4 +139,14 @@ describe("fetchOffProduct", () => {
     vi.mocked(fetch).mockRejectedValue(new Error("offline"));
     expect(await fetchOffProduct("4011200296908")).toEqual({ kind: "error", cause: "network" });
   });
+
+  it("bypasses the data cache with cache:'no-store' when fresh is requested", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ status: 0 }));
+
+    await fetchOffProduct("4011200296908", { fresh: true });
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    expect((init as { cache?: string })?.cache).toBe("no-store");
+    expect((init as { next?: unknown })?.next).toBeUndefined();
+  });
 });

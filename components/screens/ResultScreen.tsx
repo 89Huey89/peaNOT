@@ -3,13 +3,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import type { ProductResult } from "@/lib/types";
-import { resolveVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/verdict";
+import { VERDICT, resolveVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/verdict";
 import { CAVEATS, hasIdentityCaveat } from "@/lib/caveats";
 import { applyPackMatch } from "@/lib/packmatch";
 import { offProductUrl } from "@/lib/off/link";
 import { usePackMatch } from "@/components/usePackMatch";
 import { getProfiles } from "@/lib/allergens/profile";
 import { beep, vibrate } from "@/lib/feedback";
+import { formatRelative } from "@/lib/time";
+import type { HistoryEntry } from "@/components/useHistory";
 import { AppShell, Chip, Mono, Stamp, TopBar, type ChipTone } from "@/components/ui";
 import { ArrowRight, ExternalLink, RotateCcw, X } from "lucide-react";
 
@@ -94,6 +96,7 @@ function highlight(text: string, found: string | null | undefined, P: Palette): 
 export default function ResultScreen({
   P,
   result,
+  lastKnown,
   selectedAllergens,
   tracesStrict,
   haptic,
@@ -105,6 +108,9 @@ export default function ResultScreen({
 }: {
   P: Palette;
   result: ProductResult;
+  /** The barcode's most recent history entry from *before* this lookup —
+   * shown only alongside a network-error result (see result.networkError). */
+  lastKnown: HistoryEntry | null;
   selectedAllergens: string[];
   tracesStrict: boolean;
   haptic: boolean;
@@ -248,8 +254,30 @@ export default function ResultScreen({
       >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <Mono style={{ opacity: 0.6 }}>ergebnis</Mono>
-          <Mono style={{ opacity: 0.6 }}>geprüft · {nowHHMM()}</Mono>
+          <Mono style={{ opacity: 0.6 }}>
+            {result.cachedAt ? "offline · zwischengespeichert" : `geprüft · ${nowHHMM()}`}
+          </Mono>
         </div>
+
+        {result.cachedAt ? (
+          <div
+            style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: `${P.AMBER}12`,
+              border: `1.5px dashed ${P.AMBER}`,
+              fontSize: 12.5,
+              lineHeight: 1.45,
+            }}
+          >
+            <Mono style={{ opacity: 0.75, color: P.AMBER }}>offline</Mono>
+            <div style={{ marginTop: 3 }}>
+              Offline — Ergebnis aus Abfrage vom{" "}
+              {formatRelative(new Date(result.cachedAt).getTime())}.
+            </div>
+          </div>
+        ) : null}
 
         <p
           ref={headlineRef}
@@ -755,6 +783,25 @@ export default function ResultScreen({
               <div style={{ marginTop: 3, opacity: 0.72 }}>
                 Eine neue Revision kann auch nur ein Foto oder eine Textkorrektur sein.
                 Sie bestätigt keine neue Rezeptur. Die aktuelle Packung ist maßgeblich.
+              </div>
+            </div>
+          ) : null}
+
+          {result.networkError && lastKnown ? (
+            <div
+              style={{
+                marginTop: 14,
+                padding: "12px 14px",
+                borderRadius: 10,
+                background: `${P.INK}05`,
+                border: `1px dashed ${P.INK}33`,
+              }}
+            >
+              <Mono style={{ opacity: 0.6 }}>zuletzt bekannt</Mono>
+              <div style={{ fontSize: 12.5, marginTop: 5, lineHeight: 1.45 }}>
+                Zuletzt am {formatRelative(lastKnown.ts)} als{" "}
+                <strong>{VERDICT[lastKnown.verdict].label}</strong> geprüft — aktuell nicht
+                verifizierbar.
               </div>
             </div>
           ) : null}

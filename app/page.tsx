@@ -23,6 +23,7 @@ export default function Home() {
 
   const [route, setRoute] = useState<Route | null>(null);
   const [systemDark, setSystemDark] = useState(false);
+  const [lastKnown, setLastKnown] = useState<HistoryEntry | null>(null);
   const bootstrapped = useRef(false);
 
   // Resolve the "system" theme option and keep it in sync with the OS setting.
@@ -66,22 +67,38 @@ export default function Home() {
   }, [ready, prefs.onboarded]);
 
   const runLookup = useCallback(
-    async (barcode: string) => {
+    async (barcode: string, opts: { fresh?: boolean } = {}) => {
       // Every alarm beep traces back to a lookup started here (camera
       // detection, manual entry, search, or a history/staple tap) — resuming
       // the shared AudioContext synchronously at the top covers all of them,
       // not just the explicit "Kamera starten" unlock in BarcodeScanner.
       unlockAudio();
-      const r = await lookup(barcode, prefs.selectedAllergens);
+      // Snapshot the barcode's last known verdict *before* record() below can
+      // dedupe/replace it — a network-error result needs to point at the
+      // prior scan, not at the "Unbekannt" entry it is about to create.
+      const previous = history.find((h) => h.barcode === barcode) ?? null;
+      const r = await lookup(barcode, prefs.selectedAllergens, opts);
       if (r) {
         record(r);
+        setLastKnown(previous);
         setRoute("result");
       }
     },
-    [lookup, record, prefs.selectedAllergens],
+    [lookup, record, prefs.selectedAllergens, history],
   );
 
   const openEntry = useCallback((entry: HistoryEntry) => runLookup(entry.barcode), [runLookup]);
+
+  // If a network-error result is on screen when connectivity returns, retry
+  // the same barcode automatically — the household member doesn't have to
+  // remember to tap "Erneut prüfen" once they're back near a signal.
+  useEffect(() => {
+    if (!(route === "result" && result?.networkError)) return;
+    const barcode = result.barcode;
+    const onOnline = () => runLookup(barcode);
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [route, result, runLookup]);
 
   if (!ready || route === null) {
     return (
@@ -162,6 +179,7 @@ export default function Home() {
             <ResultScreen
               P={P}
               result={result}
+              lastKnown={lastKnown}
               selectedAllergens={prefs.selectedAllergens}
               tracesStrict={prefs.tracesStrict}
               haptic={prefs.haptic}
@@ -169,7 +187,7 @@ export default function Home() {
               loading={loading}
               onBack={() => setRoute("scan")}
               onScanAgain={() => setRoute("scan")}
-              onRetry={() => runLookup(result.barcode)}
+              onRetry={() => runLookup(result.barcode, { fresh: true })}
             />
           </div>
         ) : null}
