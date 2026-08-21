@@ -179,7 +179,9 @@ export function Chip({
       : tone === "bad"
         ? { fg: P.RED, bg: `${P.RED}10`, bd: P.RED }
         : tone === "warn"
-          ? { fg: P.AMBER, bg: `${P.AMBER}12`, bd: P.AMBER }
+          // AMBER itself only reaches ~3:1 as small text even on its own
+          // tinted backdrop (see lib/theme.ts) — AMBER_TEXT clears 4.5:1.
+          ? { fg: P.AMBER_TEXT, bg: `${P.AMBER}12`, bd: P.AMBER }
           : tone === "info"
             ? { fg: P.INK, bg: `${P.INK}06`, bd: `${P.INK}33` }
             : { fg: P.INK, bg: "transparent", bd: `${P.INK}33` };
