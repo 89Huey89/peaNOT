@@ -98,6 +98,13 @@ export type RecallCheckResult =
   | { status: "ok"; matches: RecallMatch[] }
   | { status: "unavailable" };
 
+/**
+ * Why a result came back KEINE_DATEN, so the UI can tell "the product might
+ * still be findable, try again" (no-data/error) apart from "we looked, there
+ * is nothing under this code" (not-found). Never set for a real verdict.
+ */
+export type KeineDatenKind = "not-found" | "no-data" | "error";
+
 /** Public response shape returned by /api/product/[barcode]. */
 export interface ProductResult {
   barcode: string;
@@ -106,6 +113,8 @@ export interface ProductResult {
   /** Overall verdict across all checked allergens (worst case wins). */
   status: PeanutStatus;
   message?: string;
+  /** Set only alongside a KEINE_DATEN status; see KeineDatenKind. */
+  kind?: KeineDatenKind;
   /** Product photo URL from Open Food Facts, when available. */
   imageUrl?: string | null;
   /** Unix timestamp of the last OFF record edit (not proof of a recipe change). */
@@ -132,4 +141,18 @@ export interface ProductResult {
   allergens?: string[];
   /** German labels for allergens flagged as possible traces. */
   traces?: string[];
+  /**
+   * Client-only annotation: set when this response was served by the service
+   * worker from its offline cache rather than a live fetch (X-Peanot-Cache /
+   * X-Peanot-Cached-At in public/sw.js). ISO timestamp of the original fetch,
+   * never set by the API itself. Purely informational — never changes status.
+   */
+  cachedAt?: string;
+  /**
+   * Client-only annotation: set when the lookup request itself never reached
+   * the app's own API (offline with nothing cached, aborted, etc.). Set by
+   * components/useProductLookup.ts, never by the API. Distinguishes this
+   * client-side fail-safe fallback from a server-reported KEINE_DATEN.
+   */
+  networkError?: boolean;
 }

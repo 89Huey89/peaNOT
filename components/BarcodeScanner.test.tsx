@@ -52,6 +52,12 @@ async function clickStart() {
   await userEvent.click(await screen.findByRole("button", { name: /Kamera starten/ }));
 }
 
+/** Clears the ~800ms post-start arming delay (real timers — see ARM_DELAY_MS
+ * in components/BarcodeScanner.tsx) so a test can exercise scans after it. */
+async function waitForArm() {
+  await new Promise((resolve) => setTimeout(resolve, 850));
+}
+
 describe("BarcodeScanner", () => {
   beforeEach(() => {
     decodeMock.mockReset();
@@ -68,6 +74,34 @@ describe("BarcodeScanner", () => {
     // Nothing decodes on mount; the start affordance is shown instead.
     expect(decodeMock).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /Kamera starten/ })).toBeInTheDocument();
+  });
+
+  it("starts the camera on mount when autoStart is on (UX10), no tap required", async () => {
+    decodeMock.mockImplementation(async () => ({ stop: vi.fn() }));
+
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} autoStart />);
+
+    await waitFor(() => expect(decodeMock).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: /Kamera starten/ })).not.toBeInTheDocument();
+  });
+
+  it("still arms an auto-started camera before accepting a scan", async () => {
+    let capturedCallback: DecodeCallback = () => {};
+    decodeMock.mockImplementation(async (_constraints, _video, cb: DecodeCallback) => {
+      capturedCallback = cb;
+      return { stop: vi.fn() };
+    });
+
+    const onDetected = vi.fn();
+    render(<BarcodeScanner {...baseProps} onDetected={onDetected} autoStart />);
+    await waitFor(() => expect(decodeMock).toHaveBeenCalled());
+
+    capturedCallback({ getText: () => "4011200296908" });
+    expect(onDetected).not.toHaveBeenCalled();
+
+    await waitForArm();
+    capturedCallback({ getText: () => "4011200296908" });
+    expect(onDetected).toHaveBeenCalledWith("4011200296908");
   });
 
   it("starts any-orientation, high-resolution, autofocusing capture on tap", async () => {
@@ -105,11 +139,34 @@ describe("BarcodeScanner", () => {
     render(<BarcodeScanner {...baseProps} onDetected={onDetected} />);
     await clickStart();
     await waitFor(() => expect(decodeMock).toHaveBeenCalled());
+    await waitForArm();
 
     capturedCallback({ getText: () => "4011200296908" });
     capturedCallback({ getText: () => "4011200296908" }); // duplicate within window
 
     expect(onDetected).toHaveBeenCalledTimes(1);
+    expect(onDetected).toHaveBeenCalledWith("4011200296908");
+  });
+
+  it("ignores a detection during the ~800ms arming delay right after start, then accepts once armed", async () => {
+    let capturedCallback: DecodeCallback = () => {};
+    decodeMock.mockImplementation(async (_constraints, _video, cb: DecodeCallback) => {
+      capturedCallback = cb;
+      return { stop: vi.fn() };
+    });
+
+    const onDetected = vi.fn();
+    render(<BarcodeScanner {...baseProps} onDetected={onDetected} />);
+    await clickStart();
+    await waitFor(() => expect(decodeMock).toHaveBeenCalled());
+
+    // Still inside the arming window right after start — this used to be
+    // exactly the premature-scan case the manual-tap-only design prevented.
+    capturedCallback({ getText: () => "4011200296908" });
+    expect(onDetected).not.toHaveBeenCalled();
+
+    await waitForArm();
+    capturedCallback({ getText: () => "4011200296908" });
     expect(onDetected).toHaveBeenCalledWith("4011200296908");
   });
 
@@ -143,6 +200,7 @@ describe("BarcodeScanner", () => {
     // Wait until the start flow settles into "scanning" (start button gone),
     // otherwise the idle→scanning transition would clear the fresh banner.
     await waitFor(() => expect(screen.queryByRole("button", { name: /Kamera/ })).toBeNull());
+    await waitForArm();
 
     capturedCallback({ getText: () => "4011200296908" });
 
@@ -181,6 +239,74 @@ describe("BarcodeScanner", () => {
 
     expect(applyConstraints).toHaveBeenCalledWith({ advanced: [{ torch: true }] });
     expect(await screen.findByRole("button", { name: "Licht aus" })).toBeInTheDocument();
+  });
+
+  it("offers a 1x/2x zoom toggle when the track reports a usable zoom range", async () => {
+    const applyConstraints = vi.fn().mockResolvedValue(undefined);
+    const track = {
+      getCapabilities: () => ({ zoom: { min: 1, max: 8, step: 0.1 } }),
+      applyConstraints,
+    };
+    decodeMock.mockImplementation(async (_constraints, video: HTMLVideoElement, _cb: DecodeCallback) => {
+      Object.defineProperty(video, "srcObject", {
+        configurable: true,
+        value: { getVideoTracks: () => [track] },
+      });
+      return { stop: vi.fn() };
+    });
+
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
+    await clickStart();
+
+    const zoomButton = await screen.findByRole("button", { name: "1×" });
+    await userEvent.click(zoomButton);
+
+    // 2x is clamped into the track's own [min, max] range.
+    expect(applyConstraints).toHaveBeenCalledWith({ advanced: [{ zoom: 2 }] });
+    const zoomedButton = await screen.findByRole("button", { name: "2×" });
+    expect(zoomedButton).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(zoomedButton);
+    expect(applyConstraints).toHaveBeenLastCalledWith({ advanced: [{ zoom: 1 }] });
+    expect(await screen.findByRole("button", { name: "1×" })).toBeInTheDocument();
+  });
+
+  it("clamps the 2x target to a track's max when the range doesn't reach 2", async () => {
+    const applyConstraints = vi.fn().mockResolvedValue(undefined);
+    const track = {
+      getCapabilities: () => ({ zoom: { min: 1, max: 1.5 } }),
+      applyConstraints,
+    };
+    decodeMock.mockImplementation(async (_constraints, video: HTMLVideoElement, _cb: DecodeCallback) => {
+      Object.defineProperty(video, "srcObject", {
+        configurable: true,
+        value: { getVideoTracks: () => [track] },
+      });
+      return { stop: vi.fn() };
+    });
+
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
+    await clickStart();
+    await userEvent.click(await screen.findByRole("button", { name: "1×" }));
+
+    expect(applyConstraints).toHaveBeenCalledWith({ advanced: [{ zoom: 1.5 }] });
+  });
+
+  it("does not offer a zoom toggle when the track has no zoom capability", async () => {
+    const track = { getCapabilities: () => ({ torch: true }) };
+    decodeMock.mockImplementation(async (_constraints, video: HTMLVideoElement, _cb: DecodeCallback) => {
+      Object.defineProperty(video, "srcObject", {
+        configurable: true,
+        value: { getVideoTracks: () => [track] },
+      });
+      return { stop: vi.fn() };
+    });
+
+    render(<BarcodeScanner {...baseProps} onDetected={vi.fn()} />);
+    await clickStart();
+    await screen.findByRole("button", { name: "Licht an" });
+
+    expect(screen.queryByRole("button", { name: "1×" })).not.toBeInTheDocument();
   });
 
   it("shows a German message when camera access is denied", async () => {

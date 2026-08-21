@@ -152,8 +152,17 @@ export function verdictCopy(
       },
     }[verdict];
   } else {
-    const danger = joinLabels(hits, "JA");
+    const dangerHits = hits.filter((h) => h.status === "JA").map((h) => h.label);
+    const danger = dangerHits.join(", ");
     const traces = joinLabels(hits, "SPUREN");
+    // Up to two offenders fit in the big glance-level title ("Erdnuss & Soja
+    // enthalten."); beyond that it would overflow, so it falls back to the
+    // generic "Treffer." — the names still live in the detail line below and
+    // the per-allergen chip list further down.
+    const dangerTitle =
+      dangerHits.length > 0 && dangerHits.length <= 2
+        ? `${dangerHits.join(" & ")} enthalten.`
+        : "Treffer.";
     copy = {
       safe: {
         label: "Alles frei",
@@ -164,7 +173,7 @@ export function verdictCopy(
       danger: {
         label: "Treffer",
         tag: "treffer",
-        title: "Treffer.",
+        title: dangerTitle,
         detail: danger ? `Enthält: ${danger}.` : "Enthält eines deiner Allergene.",
       },
       trace: {
@@ -209,4 +218,29 @@ const VERDICT_GLYPH: Record<Verdict, string> = {
 
 export function verdictGlyph(verdict: Verdict): string {
   return VERDICT_GLYPH[verdict];
+}
+
+// Severity ranking used only to detect a *worsening* change vs. history — it
+// never feeds back into the verdict itself. "safe" and "partial" share a rank
+// (both are "no allergen found", just with differing confidence), and
+// "unknown" has none: going to or from missing data is not a proven change in
+// either direction, so it must never trigger the warning.
+const VERDICT_SEVERITY: Record<Verdict, number> = {
+  safe: 0,
+  partial: 0,
+  trace: 1,
+  danger: 2,
+  unknown: -1,
+};
+
+/**
+ * True when `next` is a strictly worse verdict than `previous` for the same
+ * barcode (safe/partial → trace/danger, or trace → danger). Informational
+ * only: used to show a warning strip, never to alter either verdict.
+ */
+export function isVerdictWorsening(previous: Verdict, next: Verdict): boolean {
+  const prevRank = VERDICT_SEVERITY[previous];
+  const nextRank = VERDICT_SEVERITY[next];
+  if (prevRank < 0 || nextRank < 0) return false;
+  return nextRank > prevRank;
 }

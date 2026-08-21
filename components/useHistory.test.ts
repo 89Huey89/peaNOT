@@ -121,4 +121,60 @@ describe("useHistory", () => {
     expect(result.current.history).toEqual([]);
     expect(JSON.parse(window.localStorage.getItem(KEY)!)).toEqual([]);
   });
+
+  it("restores a removed entry, preserving its ts/id and sort position", async () => {
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.record(product({ barcode: "111", productName: "First" })));
+    act(() => result.current.record(product({ barcode: "222", productName: "Second" })));
+
+    const removed = result.current.history.find((h) => h.name === "First")!;
+    act(() => result.current.remove(removed.id));
+    expect(result.current.history.map((h) => h.name)).toEqual(["Second"]);
+
+    act(() => result.current.restore(removed));
+
+    // Older ts sorts back below the newer entry, not onto the top.
+    expect(result.current.history).toEqual([
+      expect.objectContaining({ name: "Second" }),
+      removed,
+    ]);
+    const stored = JSON.parse(window.localStorage.getItem(KEY)!);
+    expect(stored.map((h: { id: string }) => h.id)).toEqual([
+      result.current.history[0]!.id,
+      removed.id,
+    ]);
+  });
+
+  it("does not duplicate an entry that is restored while already present", async () => {
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.record(product({ barcode: "111", productName: "Only" })));
+    const entry = result.current.history[0]!;
+
+    act(() => result.current.restore(entry));
+
+    expect(result.current.history).toHaveLength(1);
+  });
+
+  it("importEntries (F1) merges an imported list in, newest-first and deduped", async () => {
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.record(product({ barcode: "111", productName: "Lokal" })));
+    const local = result.current.history[0]!;
+
+    act(() =>
+      result.current.importEntries([
+        local, // re-imported unchanged — must not duplicate
+        { id: "h_2_222", ts: local.ts + 1, barcode: "222", name: "Importiert", brand: "Y", verdict: "danger" },
+      ]),
+    );
+
+    expect(result.current.history.map((h) => h.name)).toEqual(["Importiert", "Lokal"]);
+    const stored = JSON.parse(window.localStorage.getItem(KEY)!);
+    expect(stored.map((h: { name: string }) => h.name)).toEqual(["Importiert", "Lokal"]);
+  });
 });

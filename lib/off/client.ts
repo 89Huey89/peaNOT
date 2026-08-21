@@ -19,8 +19,15 @@ import { applySafetyOverrides } from "@/lib/off/safety-overrides";
 /**
  * Fetch a product from Open Food Facts (server-side). Never throws: every
  * failure is mapped to an OffFetchOutcome so callers can fail safe.
+ *
+ * `fresh` bypasses the Next data cache entirely (manual "Erneut prüfen"):
+ * ordinary scans stay on the shared 1h cache, a fresh check actually re-asks
+ * OFF instead of reusing up to an hour-old data.
  */
-export async function fetchOffProduct(barcode: string): Promise<OffFetchOutcome> {
+export async function fetchOffProduct(
+  barcode: string,
+  opts: { fresh?: boolean } = {},
+): Promise<OffFetchOutcome> {
   const url = `${OFF_BASE_URL}/${encodeURIComponent(barcode)}.json?fields=${OFF_FIELDS}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), OFF_TIMEOUT_MS);
@@ -29,7 +36,9 @@ export async function fetchOffProduct(barcode: string): Promise<OffFetchOutcome>
     const res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
       signal: controller.signal,
-      next: { revalidate: OFF_REVALIDATE_S },
+      ...(opts.fresh
+        ? { cache: "no-store" as RequestCache }
+        : { next: { revalidate: OFF_REVALIDATE_S } }),
     });
 
     if (!res.ok) {

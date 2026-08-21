@@ -1,28 +1,35 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { readPackMatch, writePackMatch, type PackMatch } from "@/lib/packmatch";
+import {
+  readPackMatchEntry,
+  writePackMatch,
+  type PackMatch,
+  type StoredAnswer,
+} from "@/lib/packmatch";
 
 /**
  * The user's remembered answer to the pack comparison for one barcode, kept in
  * the browser (localStorage) like the rest of peaNOT's state. Scanning the same
  * code again picks the answer back up, so a known mismatch warns immediately.
+ * A "match" answer that has aged out (see lib/packmatch.ts) comes back as
+ * null here too, so the identity question is asked again.
  */
 export function usePackMatch(barcode: string) {
-  const [answer, setAnswer] = useState<PackMatch | null>(null);
+  const [entry, setEntry] = useState<StoredAnswer | null>(null);
 
   // Read after mount: localStorage is not available during server rendering.
   useEffect(() => {
-    setAnswer(readPackMatch(barcode));
+    setEntry(readPackMatchEntry(barcode));
   }, [barcode]);
 
   const answerPackMatch = useCallback(
     (value: PackMatch | null) => {
       writePackMatch(barcode, value);
-      setAnswer(value);
+      setEntry(value === null ? null : { value, ts: Date.now() });
     },
     [barcode],
   );
 
-  return { answer, answerPackMatch };
+  return { answer: entry?.value ?? null, answeredAt: entry?.ts ?? null, answerPackMatch };
 }

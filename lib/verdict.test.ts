@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isVerdictWorsening,
   resolveVerdict,
   statusToVerdict,
   VERDICT,
@@ -68,6 +69,39 @@ describe("verdictCopy multi selection", () => {
     expect(detail).not.toContain("Erdnuss");
   });
 
+  it("names a single offender in the big title", () => {
+    const hits: AllergenHit[] = [
+      { key: "peanut", label: "Erdnuss", status: "NEIN" },
+      { key: "milk", label: "Milch", status: "JA" },
+      { key: "soy", label: "Soja", status: "NEIN" },
+    ];
+    expect(verdictCopy("danger", profiles, hits).title).toBe("Milch enthalten.");
+  });
+
+  it("names up to two offenders in the big title", () => {
+    const hits: AllergenHit[] = [
+      { key: "peanut", label: "Erdnuss", status: "NEIN" },
+      { key: "milk", label: "Milch", status: "JA" },
+      { key: "soy", label: "Soja", status: "JA" },
+    ];
+    expect(verdictCopy("danger", profiles, hits).title).toBe("Milch & Soja enthalten.");
+  });
+
+  it("falls back to the generic title with three or more offenders", () => {
+    const three = getProfiles(["peanut", "milk", "soy", "gluten"]);
+    const hits: AllergenHit[] = [
+      { key: "peanut", label: "Erdnuss", status: "JA" },
+      { key: "milk", label: "Milch", status: "JA" },
+      { key: "soy", label: "Soja", status: "JA" },
+      { key: "gluten", label: "Gluten", status: "NEIN" },
+    ];
+    expect(verdictCopy("danger", three, hits).title).toBe("Treffer.");
+  });
+
+  it("falls back to the generic title when no per-allergen hits are supplied", () => {
+    expect(verdictCopy("danger", profiles, []).title).toBe("Treffer.");
+  });
+
   it("lists possible traces", () => {
     const hits: AllergenHit[] = [
       { key: "peanut", label: "Erdnuss", status: "SPUREN" },
@@ -124,5 +158,35 @@ describe("verdictCopy for a qualified all-clear", () => {
     expect(verdictCopy("partial", getProfiles(["peanut", "hazelnut"]), []).detail).toContain(
       "eingeschränkt",
     );
+  });
+});
+
+describe("isVerdictWorsening", () => {
+  it("flags safe or partial turning into a trace or a hit", () => {
+    expect(isVerdictWorsening("safe", "trace")).toBe(true);
+    expect(isVerdictWorsening("safe", "danger")).toBe(true);
+    expect(isVerdictWorsening("partial", "trace")).toBe(true);
+    expect(isVerdictWorsening("partial", "danger")).toBe(true);
+  });
+
+  it("flags a trace turning into a hit", () => {
+    expect(isVerdictWorsening("trace", "danger")).toBe(true);
+  });
+
+  it("never flags an unchanged or improving verdict", () => {
+    expect(isVerdictWorsening("safe", "safe")).toBe(false);
+    expect(isVerdictWorsening("safe", "partial")).toBe(false);
+    expect(isVerdictWorsening("partial", "safe")).toBe(false);
+    expect(isVerdictWorsening("trace", "trace")).toBe(false);
+    expect(isVerdictWorsening("danger", "safe")).toBe(false);
+    expect(isVerdictWorsening("danger", "trace")).toBe(false);
+    expect(isVerdictWorsening("danger", "danger")).toBe(false);
+  });
+
+  it("never flags a change involving unknown in either direction", () => {
+    expect(isVerdictWorsening("safe", "unknown")).toBe(false);
+    expect(isVerdictWorsening("danger", "unknown")).toBe(false);
+    expect(isVerdictWorsening("unknown", "danger")).toBe(false);
+    expect(isVerdictWorsening("unknown", "safe")).toBe(false);
   });
 });

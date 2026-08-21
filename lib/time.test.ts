@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRelative } from "@/lib/time";
+import { formatRelative, isDataStale } from "@/lib/time";
 
 describe("formatRelative", () => {
   const now = new Date("2026-05-26T12:00:00").getTime();
@@ -26,5 +26,29 @@ describe("formatRelative", () => {
   it("falls back to a date for older entries", () => {
     const longAgo = new Date("2026-04-01T10:00:00").getTime();
     expect(formatRelative(longAgo, now)).toMatch(/\d{2}\.\d{2}/);
+  });
+});
+
+describe("isDataStale", () => {
+  const now = new Date("2026-08-21T12:00:00").getTime();
+
+  it("is not stale just under 24 months", () => {
+    const editedMs = new Date("2024-09-01T00:00:00").getTime();
+    expect(isDataStale(editedMs / 1000, now)).toBe(false);
+  });
+
+  it("is stale at exactly 24 months", () => {
+    const editedMs = new Date("2024-08-01T00:00:00").getTime();
+    expect(isDataStale(editedMs / 1000, now)).toBe(true);
+  });
+
+  it("is stale well past 24 months", () => {
+    const editedMs = new Date("2021-01-01T00:00:00").getTime();
+    expect(isDataStale(editedMs / 1000, now)).toBe(true);
+  });
+
+  it("is not stale for a recent edit", () => {
+    const editedMs = new Date("2026-08-01T00:00:00").getTime();
+    expect(isDataStale(editedMs / 1000, now)).toBe(false);
   });
 });

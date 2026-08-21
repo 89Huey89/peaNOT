@@ -32,6 +32,10 @@ export function useProductSearch() {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
       // Invalidate and abort any in-flight request once the component unmounts.
+      // requestIdRef is a plain cancellation counter, not a DOM ref, so it
+      // must read the live .current at unmount time — the exhaustive-deps
+      // "copy to a variable" suggestion would defeat the counter's purpose.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       requestIdRef.current++;
       abortRef.current?.abort();
     };

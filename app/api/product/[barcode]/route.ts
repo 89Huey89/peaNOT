@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { ProductResult } from "@/lib/types";
+import type { KeineDatenKind, ProductResult } from "@/lib/types";
 import { isValidBarcode, sanitizeBarcode } from "@/lib/barcode";
 import { fetchOffProduct } from "@/lib/off/client";
 import { detectAllergens } from "@/lib/allergens/combine";
@@ -11,8 +11,6 @@ import { checkRecalls } from "@/lib/recalls/check";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type KeineDatenKind = "not-found" | "no-data" | "error";
-
 /** Read the requested allergen keys, whitelist them, default to peanut. */
 function parseProfiles(url: string): AllergenProfile[] {
   const param = new URL(url).searchParams.get("a");
@@ -21,6 +19,11 @@ function parseProfiles(url: string): AllergenProfile[] {
     : [];
   const profiles = getProfiles(keys);
   return profiles.length > 0 ? profiles : getProfiles(["peanut"]);
+}
+
+/** The manual "Erneut prüfen" retry sends ?fresh=1 to bypass the OFF data cache. */
+function isFreshRequest(url: string): boolean {
+  return new URL(url).searchParams.get("fresh") === "1";
 }
 
 function keineDatenMessage(
@@ -51,7 +54,7 @@ export async function GET(
   }
 
   const profiles = parseProfiles(request.url);
-  const outcome = await fetchOffProduct(barcode);
+  const outcome = await fetchOffProduct(barcode, { fresh: isFreshRequest(request.url) });
 
   // Recall notices carry names, not barcodes, so the comparison needs the OFF
   // record first — and is skipped entirely when there is no name to compare.
@@ -91,6 +94,7 @@ export async function GET(
         productName: outcome.productName || null,
         brand: outcome.brand || null,
         status: "KEINE_DATEN",
+        kind: "no-data",
         message: keineDatenMessage("no-data", profiles),
         imageUrl: outcome.imageUrl || null,
         dataLastModified: outcome.dataLastModified,
@@ -105,6 +109,7 @@ export async function GET(
         productName: null,
         brand: null,
         status: "KEINE_DATEN",
+        kind: "not-found",
         message: keineDatenMessage("not-found", profiles),
         caveats: detectCaveats(barcode, "KEINE_DATEN", null),
       };
@@ -115,11 +120,18 @@ export async function GET(
         productName: null,
         brand: null,
         status: "KEINE_DATEN",
+        kind: "error",
         message: keineDatenMessage("error", profiles),
         caveats: detectCaveats(barcode, "KEINE_DATEN", null),
       };
       break;
   }
 
-  return NextResponse.json(result, { status: 200 });
+  // A transient OFF failure (network/timeout/parse/HTTP error) is not a real
+  // answer — mark it so the service worker never caches it (public/sw.js).
+  // Status stays 200: the client contract parses the JSON body regardless.
+  const headers: HeadersInit =
+    outcome.kind === "error" ? { "X-Peanot-Transient": "1" } : {};
+
+  return NextResponse.json(result, { status: 200, headers });
 }

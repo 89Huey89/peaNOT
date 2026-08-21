@@ -33,7 +33,12 @@ export function Mono({
     <span
       style={{
         fontFamily: MONO,
-        fontSize: 10,
+        // 11px equivalent at the base scale — em so it also respects the
+        // "Größere Schrift" setting (.device's font-size, see app/page.tsx).
+        // Callers that need a smaller, fixed size (e.g. the Stamp's inner
+        // subline, sized to fit a fixed-diameter circle) pass an explicit
+        // fontSize below and win via the spread.
+        fontSize: "0.6875em",
         letterSpacing: ".14em",
         textTransform: "uppercase",
         ...style,
@@ -57,7 +62,7 @@ export function SectionTitle({
         fontFamily: SERIF,
         fontWeight: 800,
         fontStyle: italic ? "italic" : "normal",
-        fontSize: 26,
+        fontSize: "1.625em",
         letterSpacing: -0.4,
         margin: "0 0 10px",
       }}
@@ -96,12 +101,21 @@ export function Stamp({
   verdict,
   P,
   animate = true,
+  colorOverride,
 }: {
   verdict: Verdict;
   P: Palette;
   animate?: boolean;
+  /** Recolor the stamp without changing its word/category — used when strict
+   * mode treats a trace like a hit but "spuren" must stay legible. */
+  colorOverride?: string;
 }) {
-  const fg = verdictColor(verdict, P);
+  // The stamp is ring *and* text: the word sits at ~17-24px, below the
+  // large-text threshold, so the amber verdicts print in AMBER_TEXT rather than
+  // the fill-grade AMBER (see lib/theme.ts). Dark mode maps both to the same
+  // value, so this only bites in light mode.
+  const amberVerdict = VERDICT[verdict].colorKey === "AMBER";
+  const fg = colorOverride ?? (amberVerdict ? P.AMBER_TEXT : verdictColor(verdict, P));
   const { stampWord, stampSub } = VERDICT[verdict];
   return (
     <div
@@ -170,7 +184,9 @@ export function Chip({
       : tone === "bad"
         ? { fg: P.RED, bg: `${P.RED}10`, bd: P.RED }
         : tone === "warn"
-          ? { fg: P.AMBER, bg: `${P.AMBER}12`, bd: P.AMBER }
+          // AMBER itself only reaches ~3:1 as small text even on its own
+          // tinted backdrop (see lib/theme.ts) — AMBER_TEXT clears 4.5:1.
+          ? { fg: P.AMBER_TEXT, bg: `${P.AMBER}12`, bd: P.AMBER }
           : tone === "info"
             ? { fg: P.INK, bg: `${P.INK}06`, bd: `${P.INK}33` }
             : { fg: P.INK, bg: "transparent", bd: `${P.INK}33` };
@@ -260,6 +276,44 @@ export function TabBar({
         );
       })}
     </nav>
+  );
+}
+
+/**
+ * A compact, icon-only TopBar action (44×44pt tap target, no visible fill —
+ * see .hit44). Used for actions that must be reachable from every tab, not
+ * just one screen's body — e.g. the allergy card (UX7).
+ */
+export function IconButton({
+  P,
+  icon,
+  label,
+  onClick,
+}: {
+  P: Palette;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="tap hit44"
+      onClick={onClick}
+      aria-label={label}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: P.DIM,
+        background: "transparent",
+        border: 0,
+        padding: 0,
+        cursor: "pointer",
+      }}
+    >
+      {icon}
+    </button>
   );
 }
 

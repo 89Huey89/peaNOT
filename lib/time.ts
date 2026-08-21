@@ -25,3 +25,20 @@ export function formatRelative(ts: number, now: number = Date.now()): string {
   if (daysAgo < 7) return `${WEEKDAYS[date.getDay()]} · ${hhmm(date)}`;
   return date.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
 }
+
+const STALE_MONTHS = 24;
+
+/**
+ * Whether an OFF record edit is old enough that a recipe change is a live
+ * risk (see the "Vorbehalte" section of README.md). Compared in whole
+ * calendar months, not days, so "over 2 years" reads the way a human means it
+ * regardless of how many 30/31-day months fall in between.
+ */
+export function isDataStale(dataLastModified: number, now: number = Date.now()): boolean {
+  const edited = new Date(dataLastModified * 1000);
+  const current = new Date(now);
+  const months =
+    (current.getFullYear() - edited.getFullYear()) * 12 +
+    (current.getMonth() - edited.getMonth());
+  return months >= STALE_MONTHS;
+}

@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { applyPackMatch, readPackMatch, writePackMatch } from "@/lib/packmatch";
+import {
+  applyPackMatch,
+  readAllPackMatch,
+  readPackMatch,
+  readPackMatchEntry,
+  sanitizePackMatchStore,
+  writeAllPackMatch,
+  writePackMatch,
+} from "@/lib/packmatch";
 
 describe("applyPackMatch", () => {
   it("changes nothing while the question is unanswered", () => {
@@ -60,11 +68,13 @@ describe("pack match storage", () => {
   });
 
   it("keeps only the newest 200 answers", () => {
+    // "mismatch" so this only exercises the count-based prune, not the
+    // separate "match" time-based expiry (see the "pack match expiry" suite).
     for (let i = 0; i < 205; i++) {
-      writePackMatch(`code-${i}`, "match", 1_000 + i);
+      writePackMatch(`code-${i}`, "mismatch", 1_000 + i);
     }
-    expect(readPackMatch("code-204")).toBe("match");
-    expect(readPackMatch("code-5")).toBe("match");
+    expect(readPackMatch("code-204")).toBe("mismatch");
+    expect(readPackMatch("code-5")).toBe("mismatch");
     expect(readPackMatch("code-4")).toBeNull();
     expect(readPackMatch("code-0")).toBeNull();
   });
@@ -82,5 +92,76 @@ describe("pack match storage", () => {
       JSON.stringify({ "20137946": { value: "vielleicht", ts: 1 } }),
     );
     expect(readPackMatch("20137946")).toBeNull();
+  });
+});
+
+describe("pack match expiry", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("keeps a fresh 'match' answer", () => {
+    writePackMatch("20137946", "match", 0);
+    expect(readPackMatch("20137946", 89 * DAY)).toBe("match");
+  });
+
+  it("expires a 'match' answer after 90 days, asking again", () => {
+    writePackMatch("20137946", "match", 0);
+    expect(readPackMatch("20137946", 91 * DAY)).toBeNull();
+  });
+
+  it("never expires a 'mismatch' answer, fail-safe", () => {
+    writePackMatch("20137946", "mismatch", 0);
+    expect(readPackMatch("20137946", 1000 * DAY)).toBe("mismatch");
+  });
+
+  it("exposes the answer's timestamp via readPackMatchEntry", () => {
+    writePackMatch("20137946", "match", 1_000);
+    expect(readPackMatchEntry("20137946", 1_000)).toEqual({ value: "match", ts: 1_000 });
+  });
+
+  it("readPackMatchEntry also honors 'match' expiry", () => {
+    writePackMatch("20137946", "match", 0);
+    expect(readPackMatchEntry("20137946", 91 * DAY)).toBeNull();
+  });
+});
+
+describe("sanitizePackMatchStore", () => {
+  it("drops malformed entries and keeps valid ones", () => {
+    expect(
+      sanitizePackMatchStore({
+        good: { value: "mismatch", ts: 5 },
+        badValue: { value: "vielleicht", ts: 5 },
+        missingTs: { value: "match" },
+      }),
+    ).toEqual({ good: { value: "mismatch", ts: 5 } });
+  });
+
+  it("returns an empty store for non-object input", () => {
+    expect(sanitizePackMatchStore(null)).toEqual({});
+    expect(sanitizePackMatchStore([1, 2])).toEqual({});
+  });
+});
+
+describe("readAllPackMatch / writeAllPackMatch (F1 export/import)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("round-trips the full store", () => {
+    writePackMatch("111", "match", 1);
+    writePackMatch("222", "mismatch", 2);
+
+    const all = readAllPackMatch();
+    expect(all).toEqual({
+      "111": { value: "match", ts: 1 },
+      "222": { value: "mismatch", ts: 2 },
+    });
+
+    window.localStorage.clear();
+    writeAllPackMatch(all);
+    expect(readAllPackMatch()).toEqual(all);
   });
 });

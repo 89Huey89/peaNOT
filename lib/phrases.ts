@@ -19,18 +19,35 @@
  *   3. a VENUE sentence asking which items are safe + a venue-specific
  *      cross-contamination request (clean/fresh tools and serving area at a
  *      counter; a question about shared fryer/grill/utensils at a restaurant).
- * Every language must cover every venue and every allergen (enforced by
- * lib/phrases.test.ts) so a picked language/allergen can never fall to silence.
+ * Every language must cover every core venue and every allergen (enforced by
+ * lib/phrases.test.ts) so a picked language/allergen can never fall to
+ * silence. A small set of *optional* venues (currently just "kita", F7b) may
+ * be translated for only some languages — phraseFor then falls back to that
+ * language's own "general" sentence, and phrases.test.ts checks the exact
+ * language subset against OPTIONAL_VENUE_LANGS so a gap is always a
+ * documented choice, never an accident.
  */
 
 import { ALLERGEN_KEYS, getProfile } from "@/lib/allergens/profile";
 
-export type VenueKey = "icecream" | "restaurant" | "bakery" | "general";
+/** Venues every language must translate directly (see LangPhrase.venues). */
+type CoreVenueKey = "icecream" | "restaurant" | "bakery" | "general";
+
+/**
+ * "kita" (F7b) is translated only for a subset of languages so far (see
+ * OPTIONAL_VENUE_LANGS) — everywhere else phraseFor falls back to that
+ * language's own "general" sentence, never a blank or borrowed-language line.
+ */
+export type VenueKey = CoreVenueKey | "kita";
 
 export interface Venue {
   key: VenueKey;
   /** German label for the picker (the app UI is German). */
   label: string;
+  /** Shown next to the label when this venue isn't translated for every
+   * language yet, so the choice is visible before picking a language that
+   * would fall back (see OPTIONAL_VENUE_LANGS). */
+  hint?: string;
 }
 
 export interface PhraseLang {
@@ -48,8 +65,20 @@ export const VENUES: Venue[] = [
   { key: "icecream", label: "Eisdiele" },
   { key: "restaurant", label: "Restaurant" },
   { key: "bakery", label: "Bäckerei & Café" },
+  { key: "kita", label: "Kita & Schule", hint: "de/en" },
   { key: "general", label: "Allgemein" },
 ];
+
+/**
+ * Venues with a dedicated sentence in only a subset of languages (currently
+ * just "kita" — de/en, see F7b). Kept as an explicit map, not "whatever
+ * LANG_PHRASES happens to define", so a missing venue is a documented choice
+ * and phrases.test.ts can check every language's coverage against it exactly
+ * — the "no silent gaps" guarantee still holds, just scoped per venue.
+ */
+export const OPTIONAL_VENUE_LANGS: Partial<Record<VenueKey, readonly string[]>> = {
+  kita: ["de", "en"],
+};
 
 /** English is the guaranteed fallback language (and translation set). */
 export const FALLBACK_LANG: PhraseLang = { code: "en", label: "English", english: "English" };
@@ -82,8 +111,13 @@ interface LangPhrase {
   lead: string;
   /** Separator between allergen terms in the list (locale-appropriate comma). */
   sep: string;
-  /** Venue question + cross-contamination request, referring back to "these allergens". */
-  venues: Record<VenueKey, string>;
+  /**
+   * Venue question + cross-contamination request, referring back to "these
+   * allergens". The four core venues are required for every language; "kita"
+   * is optional (see OPTIONAL_VENUE_LANGS) and falls back to `general` in
+   * phraseFor when a language doesn't define it.
+   */
+  venues: Record<CoreVenueKey, string> & { kita?: string };
 }
 
 /**
@@ -112,6 +146,8 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
         "Welche Gerichte sind frei von diesen Allergenen und ohne Risiko einer Verunreinigung? Bitte sagen Sie mir, ob das Gericht mit einer Fritteuse, einem Grill oder Geräten zubereitet wird, die auch für diese Allergene verwendet werden.",
       bakery:
         "Welche Backwaren sind frei von diesen Allergenen und ohne Risiko einer Verunreinigung? Bitte verwenden Sie sauberes Werkzeug.",
+      kita:
+        "Bitte achten Sie darauf, dass mein Kind keines dieser Allergene isst — auch nicht bei gemeinsamen Mahlzeiten, Back- oder Kochaktionen und Geburtstagen anderer Kinder. Bitte informieren Sie mich vorher, wenn Speisen mit diesen Allergenen an die Gruppe verteilt werden.",
       general:
         "Bitte stellen Sie sicher, dass das Essen keines dieser Allergene enthält und ohne Risiko einer Verunreinigung zubereitet wird.",
     },
@@ -126,6 +162,8 @@ export const LANG_PHRASES: Record<string, LangPhrase> = {
         "Which dishes are free from these allergens and free from any risk of cross-contamination? Please tell me if the dish is prepared using a fryer, grill or utensils shared with these allergens.",
       bakery:
         "Which baked goods are free from these allergens and free from any risk of cross-contamination? Please use clean utensils.",
+      kita:
+        "Please make sure my child does not eat any of these allergens — including at shared meals, baking or cooking activities, and other children's birthdays. Please let me know in advance if food containing these allergens is given out to the group.",
       general:
         "Please make sure the food contains none of these allergens and is prepared without any risk of cross-contamination.",
     },
@@ -771,7 +809,19 @@ export function phraseFor(
   const lp = langPhrase(code);
   const list = allergenList(code, allergenKeys);
   const lead = lp.lead.replace("{LIST}", list);
-  return `${lead} ${lp.venues[venue]}`;
+  // Optional venues (e.g. "kita") aren't translated for every language yet;
+  // fall back to this language's own "general" sentence rather than a blank
+  // line or another language's wording (see OPTIONAL_VENUE_LANGS).
+  const venueText = lp.venues[venue] ?? lp.venues.general;
+  return `${lead} ${venueText}`;
+}
+
+/**
+ * Whether a language has a dedicated sentence for this venue, or would fall
+ * back to its own "general" sentence via phraseFor (see OPTIONAL_VENUE_LANGS).
+ */
+export function hasVenueTranslation(code: string, venue: VenueKey): boolean {
+  return Boolean(langPhrase(code).venues[venue]);
 }
 
 /** The language metadata for a code, falling back to English. */
