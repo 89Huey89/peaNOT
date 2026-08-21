@@ -24,7 +24,13 @@ ebenso durch ein neues Foto oder eine reine Textkorrektur entstehen.
 
 Jeder unklare Fall (nicht gefunden, fehlende Daten, Netzwerk-/API-Fehler) wird
 fail-safe als `KEINE_DATEN` rot angezeigt – Erdnuss kann dann nicht
-ausgeschlossen werden.
+ausgeschlossen werden. Die Route unterscheidet dabei drei Gründe (`kind`:
+„not-found" / „no-data" / „error"), damit das Ergebnis den richtigen Rat gibt
+– „Zutatenliste in der Hand prüfen" bei fehlenden Daten, „später erneut
+prüfen" bei einem Netzwerk-/Server-Fehler. Rot gilt für die große
+Ergebnis-Anzeige, wo die Warnung zählt; die kleinen Verlaufs-Badges zeigen
+`KEINE_DATEN` bewusst weiter neutral-grau, weil sie neben anderen Einträgen
+stehen und ein erneuter Scan das Bild jederzeit ändern kann.
 
 ### Vorbehalte (`lib/caveats.ts`)
 
@@ -160,10 +166,33 @@ geprüften Satz abgesetzt.
 
 ## Verlauf & Einstellungen (lokal, ohne Konto)
 
-Scan-Verlauf und Einstellungen (Akzentfarbe, Vibrieren/Ton bei Treffer,
-Spuren-Strikt) liegen ausschließlich im Browser des Geräts (`localStorage`,
-Keys `peanot.history.v1` / `peanot.prefs.v1`). Kein Account, kein Server-State –
-„Leeren" entfernt den Verlauf wieder.
+Scan-Verlauf, Notizen, Favoriten, Packungs-Antworten und Einstellungen liegen
+ausschließlich im Browser des Geräts (`localStorage`, je ein eigener Key:
+`peanot.history.v1`, `peanot.notes.v1`, `peanot.favorites.v1`,
+`peanot.packmatch.v1`, `peanot.prefs.v1`). Zu den Einstellungen zählen
+Akzentfarbe, Darstellung (Hell/Dunkel/System), Schriftgröße, geprüfte
+Allergene, Vibrieren/Ton bei Treffer, Spuren-Strikt, automatischer
+Kamera-Start sowie der Karten-Zusatztext und der Notfallplan (siehe unten).
+Kein Account, kein Server-State – „Leeren" entfernt den Verlauf wieder.
+
+### Offline-Verhalten (`public/sw.js`, `components/useOnlineStatus.ts`)
+
+Der Service Worker cacht die App-Shell und, FIFO-begrenzt auf 150 Einträge,
+zuletzt abgerufene Produkt-Checks und -Fotos. Fällt eine Anfrage offline auf
+den Cache zurück, markiert er die Antwort ehrlich als solche (`cachedAt`) –
+das Ergebnis zeigt dann „offline · zwischengespeichert" statt einer
+scheinbar frischen Prüfung, mitsamt dem Alter der letzten echten Abfrage.
+Ein transienter Server-/Netzwerkfehler wird dagegen nie gecacht, damit er
+später keinen bereits vorhandenen guten Treffer für denselben Barcode
+verdrängt.
+
+Ist ein Barcode weder live noch aus dem Cache zu klären, zeigt das Ergebnis
+`KEINE_DATEN` mit „zuletzt bekannt" – dem letzten echten Verdict aus dem
+Verlauf, klar als nicht mehr verifiziert gekennzeichnet, rein informativ.
+Die Scan-Kopfzeile (`live`/`offline`, mit Punkt) spiegelt `navigator.onLine`;
+kehrt die Verbindung zurück, während ein Netzwerkfehler-Ergebnis offen ist,
+prüft die App denselben Barcode automatisch erneut – niemand muss sich
+merken, „Erneut prüfen" zu tippen.
 
 ### Scanner: automatischer Start, Zoom (`components/BarcodeScanner.tsx`)
 
@@ -195,12 +224,12 @@ berechnet, und kann ein Ergebnis nie beeinflussen.
 
 Der Alltag einer Allergiker-Familie besteht meist aus denselben 10–20
 Produkten. Ein Stern (Ergebnis-Kopfzeile, Verlaufszeile) merkt sich ein
-Produkt als Staple — lokal (`peanot.favorites.v1`, max. 50 Einträge,
+Produkt als Stammprodukt — lokal (`peanot.favorites.v1`, max. 50 Einträge,
 gleiche Machart wie `lib/notes.ts`/`lib/packmatch.ts`) mit Name, Marke,
 letztem Verdict und Prüfzeitpunkt. Die Favoriten erscheinen als eigene
 Zeile oberhalb von „Zuletzt geprüft" auf dem Scan-Screen; ein Tipp darauf
-löst den ganz normalen Prüf-Vorgang erneut aus (kein Cache-Anzeige), sodass
-sich vor dem Einkauf mit einem Tipp bestätigen lässt, dass ein Staple noch
+löst den ganz normalen Prüf-Vorgang erneut aus (keine Cache-Anzeige), sodass
+sich vor dem Einkauf mit einem Tipp bestätigen lässt, dass ein Stammprodukt noch
 grün ist — kombiniert mit der Änderungs-Warnung oben genau der Fall, den das
 README selbst benennt (Rezeptur kann sich bei gleicher EAN ändern). Rein
 informativ: Der gespeicherte Verdict wird nirgends gelesen, das ein Ergebnis
@@ -282,6 +311,9 @@ informativ und an keiner Stelle mit Verdict-Logik verbunden.
 - `lib/backup.ts` – reine Parse-/Merge-Logik für Export/Import (F1); die
   eigentlichen localStorage-Zugriffe bleiben bei den Stores, die sie schon
   besitzen (`components/useHistory.ts`, `lib/packmatch.ts`, `lib/notes.ts`).
+- `public/sw.js` – Service Worker: App-Shell- und Produkt-Cache, ehrliche
+  Cache-Kennzeichnung (`cachedAt`), nie ein transienter Fehler im Cache.
+  `components/useOnlineStatus.ts` liefert dazu `navigator.onLine` als Hook.
 - `app/api/product/[barcode]/route.ts` – API-Route, komponiert Client + Erkennung.
 - `app/page.tsx` – Client-Router über die Screens (inkl. `notfall`-Route für
   `EmergencyScreen`).

@@ -222,7 +222,7 @@ export default function HistoryScreen({
             {history.length === 0
               ? "Noch keine Scans. Sobald du ein Produkt prüfst, erscheint es hier."
               : query.trim()
-                ? `Keine Treffer für „${query.trim()}".`
+                ? `Keine Treffer für „${query.trim()}“.`
                 : "Keine Einträge in diesem Filter."}
           </p>
         ) : (
@@ -359,8 +359,8 @@ export default function HistoryScreen({
                   aria-pressed={favoriteBarcodes.has(h.barcode)}
                   aria-label={
                     favoriteBarcodes.has(h.barcode)
-                      ? `„${h.name}" aus Favoriten entfernen`
-                      : `„${h.name}" zu Favoriten hinzufügen`
+                      ? `„${h.name}“ aus Favoriten entfernen`
+                      : `„${h.name}“ zu Favoriten hinzufügen`
                   }
                   style={{
                     background: "transparent",
@@ -382,7 +382,7 @@ export default function HistoryScreen({
                   type="button"
                   className="tap hit44"
                   onClick={() => handleRemove(h)}
-                  aria-label={`„${h.name}" aus dem Verlauf entfernen`}
+                  aria-label={`„${h.name}“ aus dem Verlauf entfernen`}
                   style={{
                     background: "transparent",
                     border: 0,
@@ -459,7 +459,7 @@ export default function HistoryScreen({
           }}
         >
           <span style={{ fontSize: 13, fontWeight: 600, minWidth: 0, flex: 1 }}>
-            „{pendingUndo.name}&quot; entfernt.
+            „{pendingUndo.name}“ entfernt.
           </span>
           <button
             type="button"

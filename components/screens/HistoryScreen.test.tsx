@@ -104,7 +104,7 @@ describe("HistoryScreen favorite star (F2)", () => {
   it("offers to star an entry that isn't favorited yet", () => {
     const { onToggleFavorite } = renderScreen();
 
-    const star = screen.getByRole("button", { name: `„Reiswaffel" zu Favoriten hinzufügen` });
+    const star = screen.getByRole("button", { name: `„Reiswaffel“ zu Favoriten hinzufügen` });
     expect(star).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(star);
@@ -123,14 +123,14 @@ describe("HistoryScreen favorite star (F2)", () => {
     };
     renderScreen([ENTRY], [FAV]);
 
-    const star = screen.getByRole("button", { name: `„Reiswaffel" aus Favoriten entfernen` });
+    const star = screen.getByRole("button", { name: `„Reiswaffel“ aus Favoriten entfernen` });
     expect(star).toHaveAttribute("aria-pressed", "true");
   });
 
   it("does not remove the entry from the history list", () => {
     const { onRemove } = renderScreen();
 
-    fireEvent.click(screen.getByRole("button", { name: `„Reiswaffel" zu Favoriten hinzufügen` }));
+    fireEvent.click(screen.getByRole("button", { name: `„Reiswaffel“ zu Favoriten hinzufügen` }));
 
     expect(onRemove).not.toHaveBeenCalled();
   });
