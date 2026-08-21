@@ -395,6 +395,16 @@ export default function ProfileScreen({
           </div>
         </Section>
 
+        <Section P={P} title="Scanner">
+          <Toggle
+            P={P}
+            label="Kamera beim Öffnen automatisch starten"
+            sub="iPhone fragt trotzdem bei jedem Start kurz nach Zugriff."
+            checked={prefs.autoStartCamera}
+            onChange={(v) => setPref("autoStartCamera", v)}
+          />
+        </Section>
+
         <Section P={P} title="Meine Allergene">
           <p style={{ margin: "0 0 6px", fontSize: 13, opacity: 0.7, lineHeight: 1.4 }}>
             Wähle aus, worauf wir jedes Produkt prüfen sollen. Bei einem Treffer schlagen wir Alarm.

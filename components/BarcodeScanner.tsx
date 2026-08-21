@@ -9,6 +9,23 @@ import { tick, unlockAudio, vibrate } from "@/lib/feedback";
 
 type ScannerState = "idle" | "starting" | "scanning" | "denied" | "unsupported";
 
+/** Chrome's draft Media Capture zoom capability: an inclusive value range. */
+type ZoomCapability = { min: number; max: number; step?: number };
+
+/**
+ * Time after the stream starts producing frames during which detections are
+ * ignored. Applies to every start — manual tap and auto-start alike — since
+ * auto-start (UX10) removes the old guarantee that the user was already
+ * aiming the phone before the camera came on.
+ */
+const ARM_DELAY_MS = 800;
+
+/** "2x" targets the track's own reported max zoom, clamped so devices whose
+ * range doesn't reach 2 (e.g. max 1.5) still get their strongest step. */
+function zoomTarget(range: ZoomCapability): number {
+  return Math.min(range.max, Math.max(range.min, 2));
+}
+
 /**
  * Request a sharp, higher-resolution rear-camera stream. More pixels make
  * small / distant barcodes readable; continuous autofocus keeps them sharp as
@@ -33,6 +50,9 @@ interface BarcodeScannerProps {
   /** Light confirmation feedback the moment a code is read. */
   haptic: boolean;
   sound: boolean;
+  /** UX10: start the camera the moment this mounts instead of waiting for
+   * the "Kamera starten" tap. Evaluated once, on mount, only. */
+  autoStart?: boolean;
 }
 
 export default function BarcodeScanner({
@@ -41,6 +61,7 @@ export default function BarcodeScanner({
   loading,
   haptic,
   sound,
+  autoStart = false,
 }: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
@@ -55,11 +76,17 @@ export default function BarcodeScanner({
   hapticRef.current = haptic;
   const soundRef = useRef(sound);
   soundRef.current = sound;
+  // Gates scan acceptance for ARM_DELAY_MS after frames start flowing.
+  const armedRef = useRef(false);
+  const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const zoomRangeRef = useRef<ZoomCapability | null>(null);
 
   const [state, setState] = useState<ScannerState>("idle");
   const [detectedCode, setDetectedCode] = useState<string | null>(null);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+  const [zoomSupported, setZoomSupported] = useState(false);
+  const [zoomedIn, setZoomedIn] = useState(false);
 
   const playVideo = useCallback(() => {
     try {
@@ -110,7 +137,7 @@ export default function BarcodeScanner({
         CAMERA_CONSTRAINTS,
         videoRef.current!,
         (result) => {
-          if (pausedRef.current || frozenRef.current || !result) return;
+          if (pausedRef.current || frozenRef.current || !result || !armedRef.current) return;
           const code = sanitizeBarcode(result.getText());
           if (code === "") return;
           const now = Date.now();
@@ -139,9 +166,28 @@ export default function BarcodeScanner({
         null;
       trackRef.current = track;
       const caps = track?.getCapabilities?.() as
-        | (MediaTrackCapabilities & { torch?: boolean })
+        | (MediaTrackCapabilities & { torch?: boolean; zoom?: ZoomCapability })
         | undefined;
       setTorchSupported(Boolean(caps?.torch));
+
+      const zoomCaps = caps?.zoom;
+      const hasZoomRange =
+        zoomCaps !== undefined &&
+        typeof zoomCaps.min === "number" &&
+        typeof zoomCaps.max === "number" &&
+        zoomCaps.max > zoomCaps.min;
+      zoomRangeRef.current = hasZoomRange ? zoomCaps! : null;
+      setZoomSupported(hasZoomRange);
+      setZoomedIn(false);
+
+      // Frames are flowing now, but the very first ones can still show
+      // whatever the phone happened to be pointed at (pocket, table) before
+      // the user aims it — armedRef.current gates acceptance until then.
+      armedRef.current = false;
+      if (armTimerRef.current) clearTimeout(armTimerRef.current);
+      armTimerRef.current = setTimeout(() => {
+        armedRef.current = true;
+      }, ARM_DELAY_MS);
 
       setState("scanning");
     } catch (err) {
@@ -167,10 +213,35 @@ export default function BarcodeScanner({
     }
   }, [torchOn]);
 
-  // The camera is started deliberately by the user (tap "Kamera starten")
-  // rather than on mount, so it never grabs a frame before the user is ready
-  // to aim — which previously caused premature scans right after launch. Once
-  // started, the stream stays alive across scans via the freeze/resume effect.
+  const toggleZoom = useCallback(async () => {
+    const track = trackRef.current;
+    const range = zoomRangeRef.current;
+    if (!track || !range) return;
+    const next = !zoomedIn;
+    const value = next ? zoomTarget(range) : range.min;
+    try {
+      await track.applyConstraints({
+        advanced: [{ zoom: value }],
+      } as unknown as MediaTrackConstraints);
+      setZoomedIn(next);
+    } catch {
+      /* device rejected zoom toggle – leave state unchanged */
+    }
+  }, [zoomedIn]);
+
+  // The camera starts on the user's tap of "Kamera starten" by default, so it
+  // never grabs a frame before the user is ready to aim. UX10's autoStart
+  // opt-in starts it unconditionally on mount instead (accepting that iOS
+  // re-prompts for permission each launch regardless); ARM_DELAY_MS above
+  // covers the premature-scan risk that guard used to prevent, on both
+  // paths. Once started, the stream stays alive across scans via the
+  // freeze/resume effect below.
+  useEffect(() => {
+    if (autoStart) start();
+    // Deliberately run once on mount (empty deps): a mid-session pref flip
+    // must not retroactively start (or restart) an already idle/scanning
+    // camera.
+  }, []);
 
   // Parent-controlled freeze/resume. While paused (lookup running or result on
   // screen) the frame stays frozen; the moment it clears we resume instantly.
@@ -195,6 +266,7 @@ export default function BarcodeScanner({
       controlsRef.current = null;
       trackRef.current = null;
       frozenRef.current = false;
+      if (armTimerRef.current) clearTimeout(armTimerRef.current);
     };
   }, []);
 
@@ -238,15 +310,29 @@ export default function BarcodeScanner({
               : "Kamera starten"}
         </button>
       ) : null}
-      {state === "scanning" && torchSupported ? (
-        <button
-          type="button"
-          className="scanner__torch"
-          onClick={toggleTorch}
-          aria-pressed={torchOn}
-        >
-          {torchOn ? "Licht aus" : "Licht an"}
-        </button>
+      {state === "scanning" && (torchSupported || zoomSupported) ? (
+        <div className="scanner__controls">
+          {torchSupported ? (
+            <button
+              type="button"
+              className="scanner__torch"
+              onClick={toggleTorch}
+              aria-pressed={torchOn}
+            >
+              {torchOn ? "Licht aus" : "Licht an"}
+            </button>
+          ) : null}
+          {zoomSupported ? (
+            <button
+              type="button"
+              className="scanner__zoom"
+              onClick={toggleZoom}
+              aria-pressed={zoomedIn}
+            >
+              {zoomedIn ? "2×" : "1×"}
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {state === "denied" ? (
         <p className="scanner__hint" role="alert">

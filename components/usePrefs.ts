@@ -14,6 +14,11 @@ export interface Prefs {
   sound: boolean;
   tracesStrict: boolean;
   onboarded: boolean;
+  /** UX10: start the camera the moment the Scan-Screen mounts, skipping the
+   * "Kamera starten" tap. Off by default — iOS still shows its own camera
+   * permission prompt every launch either way, this only removes the app's
+   * own extra tap. */
+  autoStartCamera: boolean;
   /** Allergen keys (see lib/allergens/profile.ts) checked on every scan. */
   selectedAllergens: string[];
   /** "Größere Schrift" — scales the reading path's base font size; off (normal) by default. */
@@ -42,6 +47,7 @@ export const DEFAULT_PREFS: Prefs = {
   sound: false,
   tracesStrict: true,
   onboarded: false,
+  autoStartCamera: false,
   selectedAllergens: ["peanut"],
   fontScale: "normal",
   cardNote: "",

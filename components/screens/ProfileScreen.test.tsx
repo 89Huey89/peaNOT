@@ -117,6 +117,28 @@ describe("ProfileScreen vibration toggle", () => {
   });
 });
 
+describe("ProfileScreen auto-start-camera toggle (UX10)", () => {
+  it("is off by default and turning it on updates the pref", () => {
+    const { setPref } = renderScreen({ ...DEFAULT_PREFS, autoStartCamera: false });
+
+    const toggle = screen.getByRole("switch", {
+      name: /Kamera beim Öffnen automatisch starten/,
+    });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(toggle);
+    expect(setPref).toHaveBeenCalledWith("autoStartCamera", true);
+  });
+
+  it("reflects an already-enabled pref as checked", () => {
+    renderScreen({ ...DEFAULT_PREFS, autoStartCamera: true });
+
+    expect(
+      screen.getByRole("switch", { name: /Kamera beim Öffnen automatisch starten/ }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+});
+
 describe("ProfileScreen allergy card access (UX7)", () => {
   it("opens the allergy card from the TopBar with one tap", () => {
     const { onOpenCard } = renderScreen(DEFAULT_PREFS);

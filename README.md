@@ -164,6 +164,23 @@ Spuren-Strikt) liegen ausschließlich im Browser des Geräts (`localStorage`,
 Keys `peanot.history.v1` / `peanot.prefs.v1`). Kein Account, kein Server-State –
 „Leeren" entfernt den Verlauf wieder.
 
+### Scanner: automatischer Start, Zoom (`components/BarcodeScanner.tsx`)
+
+Standardmäßig startet die Kamera erst nach Tap auf **„Kamera starten"**. Wer
+in Profil → Scanner **„Kamera beim Öffnen automatisch starten"** einschaltet,
+bekommt die Kamera sofort beim Öffnen des Scan-Screens — das iPhone fragt
+trotzdem bei jedem Start kurz nach Zugriff, das lässt sich app-seitig nicht
+abstellen (iOS merkt sich Kamera-Berechtigungen für installierte
+Home-Screen-Apps nicht). Damit ein Frühscan (Kamera zeigt noch Hosentasche
+oder Tisch) nicht sofort ein Ergebnis auslöst, ignoriert der Scanner
+Treffer für die ersten ~800ms, nachdem das Bild zu laufen beginnt — und zwar
+bei beiden Startwegen, manuellem Tap wie Auto-Start gleichermaßen.
+
+Unterstützt die Kamera optischen/digitalen Zoom (`getCapabilities().zoom`),
+erscheint neben dem Blitzlicht-Knopf ein kleiner **1×/2×**-Umschalter
+(`track.applyConstraints`); ohne diese Fähigkeit bleibt er unsichtbar, ein
+Fehlschlag beim Umschalten wird still ignoriert.
+
 ### Notiz pro Produkt (`lib/notes.ts`)
 
 Im Ergebnis lässt sich pro Barcode eine kurze eigene Notiz hinterlegen (z. B.

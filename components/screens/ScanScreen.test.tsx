@@ -9,17 +9,22 @@ import { palette } from "@/lib/theme";
 // replaced with a lightweight stub. Real camera behavior is covered by
 // BarcodeScanner.test.tsx.
 vi.mock("@/components/BarcodeScanner", () => ({
-  default: () => <div data-testid="barcode-scanner-stub" />,
+  default: ({ autoStart }: { autoStart?: boolean }) => (
+    <div data-testid="barcode-scanner-stub" data-auto-start={String(Boolean(autoStart))} />
+  ),
 }));
 
-function renderScreen(favorites: Array<{
-  barcode: string;
-  name: string;
-  brand: string;
-  verdict: "safe" | "danger" | "trace" | "partial" | "unknown";
-  ts: number;
-  addedAt: number;
-}> = []) {
+function renderScreen(
+  favorites: Array<{
+    barcode: string;
+    name: string;
+    brand: string;
+    verdict: "safe" | "danger" | "trace" | "partial" | "unknown";
+    ts: number;
+    addedAt: number;
+  }> = [],
+  opts: { autoStartCamera?: boolean } = {},
+) {
   const onDetected = vi.fn();
   const onOpenFavorite = vi.fn();
   const onOpenNotfall = vi.fn();
@@ -30,6 +35,7 @@ function renderScreen(favorites: Array<{
       paused={false}
       haptic={false}
       sound={false}
+      autoStartCamera={opts.autoStartCamera ?? false}
       history={[]}
       favorites={favorites}
       onDetected={onDetected}
@@ -148,6 +154,26 @@ describe("ScanScreen entry sheet (UX8)", () => {
     const inertWrapper = container.querySelector("[inert]");
     expect(inertWrapper).not.toBeNull();
     expect(inertWrapper?.contains(scannerStub)).toBe(true);
+  });
+});
+
+describe("ScanScreen auto-start camera (UX10)", () => {
+  it("forwards autoStartCamera to BarcodeScanner as autoStart", () => {
+    renderScreen([], { autoStartCamera: true });
+
+    expect(screen.getByTestId("barcode-scanner-stub")).toHaveAttribute(
+      "data-auto-start",
+      "true",
+    );
+  });
+
+  it("defaults to not auto-starting", () => {
+    renderScreen();
+
+    expect(screen.getByTestId("barcode-scanner-stub")).toHaveAttribute(
+      "data-auto-start",
+      "false",
+    );
   });
 });
 

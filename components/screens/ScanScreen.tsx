@@ -28,6 +28,7 @@ export default function ScanScreen({
   paused,
   haptic,
   sound,
+  autoStartCamera,
   history,
   favorites,
   onDetected,
@@ -42,6 +43,9 @@ export default function ScanScreen({
   paused: boolean;
   haptic: boolean;
   sound: boolean;
+  /** UX10 opt-in (prefs.autoStartCamera): start the camera on mount instead
+   * of waiting for the "Kamera starten" tap. */
+  autoStartCamera: boolean;
   history: HistoryEntry[];
   /** Starred staples (F2), most recently starred first. */
   favorites: FavoriteEntry[];
@@ -162,6 +166,7 @@ export default function ScanScreen({
           loading={loading}
           haptic={haptic}
           sound={sound}
+          autoStart={autoStartCamera}
         />
 
         <button

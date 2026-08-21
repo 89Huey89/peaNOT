@@ -262,6 +262,7 @@ export default function Home() {
             paused={loading || route === "result"}
             haptic={prefs.haptic}
             sound={prefs.sound}
+            autoStartCamera={prefs.autoStartCamera}
             history={history}
             favorites={favorites}
             onDetected={runLookup}
