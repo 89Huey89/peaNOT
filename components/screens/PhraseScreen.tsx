@@ -159,7 +159,8 @@ export default function PhraseScreen({
               color: P.INK,
               border: `1.5px solid ${P.INK}22`,
               fontFamily: "inherit",
-              fontSize: 14,
+              // >=16px so iOS Safari doesn't zoom the page on focus.
+              fontSize: 16,
               fontWeight: 600,
               cursor: "pointer",
             }}

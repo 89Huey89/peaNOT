@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ACCENTS, type Accent, type Palette, type ThemeMode } from "@/lib/theme";
 import { ALLERGEN_LIST } from "@/lib/allergens/profile";
+import { FONT_SCALES, FONT_SCALE_LABEL } from "@/lib/fontScale";
 import type { Prefs } from "@/components/usePrefs";
 import { AppShell, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
 import { RotateCcw, User } from "lucide-react";
@@ -110,6 +111,49 @@ function Toggle({
   );
 }
 
+/**
+ * A pill in a segmented choice row (Darstellung, Schriftgröße). The visible
+ * pill stays its original small size; the button itself grows to the 44×44pt
+ * touch-target minimum via the invisible .hit44 hit-area, so the choice
+ * doesn't shrink to fit.
+ */
+function SegButton({
+  P,
+  active,
+  onClick,
+  children,
+}: {
+  P: Palette;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="tap hit44"
+      aria-pressed={active}
+      onClick={onClick}
+      style={{ background: "transparent", border: 0, padding: 0, fontFamily: "inherit" }}
+    >
+      <span
+        style={{
+          display: "inline-block",
+          padding: "7px 12px",
+          borderRadius: 99,
+          fontSize: 12.5,
+          fontWeight: 600,
+          background: active ? P.INK : "transparent",
+          color: active ? P.BG : P.INK,
+          border: `1.5px solid ${active ? P.INK : `${P.INK}33`}`,
+        }}
+      >
+        {children}
+      </span>
+    </button>
+  );
+}
+
 export default function ProfileScreen({
   P,
   prefs,
@@ -194,26 +238,32 @@ export default function ProfileScreen({
             }}
           >
             <div style={{ fontSize: 14, fontWeight: 600 }}>Akzentfarbe</div>
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 0 }}>
               {(Object.keys(ACCENTS) as Accent[]).map((key) => {
                 const active = prefs.accent === key;
                 return (
                   <button
                     key={key}
                     type="button"
-                    className="tap"
+                    className="tap hit44"
                     aria-label={key}
+                    aria-pressed={active}
                     onClick={() => setPref("accent", key)}
-                    style={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: 99,
-                      background: ACCENTS[key],
-                      border: active ? `2px solid ${P.INK}` : `2px solid transparent`,
-                      boxShadow: active ? `0 0 0 2px ${P.BG}, 0 0 0 3px ${P.INK}` : "none",
-                      padding: 0,
-                    }}
-                  />
+                    style={{ background: "transparent", border: 0, padding: 0 }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        display: "block",
+                        width: 26,
+                        height: 26,
+                        borderRadius: 99,
+                        background: ACCENTS[key],
+                        border: active ? `2px solid ${P.INK}` : `2px solid transparent`,
+                        boxShadow: active ? `0 0 0 2px ${P.BG}, 0 0 0 3px ${P.INK}` : "none",
+                      }}
+                    />
+                  </button>
                 );
               })}
             </div>
@@ -238,30 +288,42 @@ export default function ProfileScreen({
                   ["dark", "Dunkel"],
                   ["system", "System"],
                 ] as [ThemeMode, string][]
-              ).map(([key, label]) => {
-                const active = prefs.theme === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    className="tap"
-                    aria-pressed={active}
-                    onClick={() => setPref("theme", key)}
-                    style={{
-                      padding: "7px 12px",
-                      borderRadius: 99,
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      fontFamily: "inherit",
-                      background: active ? P.INK : "transparent",
-                      color: active ? P.BG : P.INK,
-                      border: `1.5px solid ${active ? P.INK : `${P.INK}33`}`,
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+              ).map(([key, label]) => (
+                <SegButton
+                  key={key}
+                  P={P}
+                  active={prefs.theme === key}
+                  onClick={() => setPref("theme", key)}
+                >
+                  {label}
+                </SegButton>
+              ))}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "10px 0 4px",
+              marginTop: 8,
+              borderTop: `1px solid ${P.INK}14`,
+              gap: 12,
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600, flexShrink: 0 }}>Schriftgröße</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {FONT_SCALES.map((scale) => (
+                <SegButton
+                  key={scale}
+                  P={P}
+                  active={prefs.fontScale === scale}
+                  onClick={() => setPref("fontScale", scale)}
+                >
+                  {FONT_SCALE_LABEL[scale]}
+                </SegButton>
+              ))}
             </div>
           </div>
         </Section>
@@ -367,7 +429,8 @@ export default function ProfileScreen({
         <p
           style={{
             fontSize: 11,
-            opacity: 0.5,
+            // Raised from 0.5 — "Bei Notfall: 112" is content, not decoration.
+            opacity: 0.7,
             textAlign: "center",
             margin: "18px 0 0",
             lineHeight: 1.5,

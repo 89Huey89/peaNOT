@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { Accent, ThemeMode } from "@/lib/theme";
+import type { FontScale } from "@/lib/fontScale";
 
 const STORAGE_KEY = "peanot.prefs.v1";
 
@@ -14,6 +15,8 @@ export interface Prefs {
   onboarded: boolean;
   /** Allergen keys (see lib/allergens/profile.ts) checked on every scan. */
   selectedAllergens: string[];
+  /** "Größere Schrift" — scales the reading path's base font size; off (normal) by default. */
+  fontScale: FontScale;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -24,6 +27,7 @@ export const DEFAULT_PREFS: Prefs = {
   tracesStrict: true,
   onboarded: false,
   selectedAllergens: ["peanut"],
+  fontScale: "normal",
 };
 
 function load(): Prefs {

@@ -51,6 +51,19 @@ body {
   user-select: none;
 }
 
+/* Grows a button's tap target to Apple HIG's 44×44pt minimum without
+   growing its visible content — for icon/text-only buttons with no visible
+   background (delete "x", "Schließen", "Alle ansehen"). Elements that DO
+   have a visible pill/circle keep that visual size and wrap it in a button
+   sized like this instead, so the fill itself never changes. */
+.hit44 {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Keyboard focus is otherwise invisible: give every interactive element a
    visible ring, but only for keyboard focus (not after a pointer tap). */
 :focus-visible {
@@ -261,7 +274,7 @@ body {
   padding: 0.55rem 0.9rem;
   border-radius: 0.6rem;
   background: var(--green, #1f6b3a);
-  color: #fff;
+  color: var(--fill-text, #fff);
   font-weight: 700;
   font-size: 0.9rem;
   text-align: center;
@@ -439,7 +452,8 @@ body {
 .history-search {
   width: 100%;
   padding: 10px 14px;
-  font-size: 14px;
+  /* >=16px so iOS Safari doesn't zoom the page on focus. */
+  font-size: 16px;
   border-radius: 99px;
   border: 1.5px solid rgba(22, 20, 15, 0.2);
   background: var(--paper, #fffdf6);

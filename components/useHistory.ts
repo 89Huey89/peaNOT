@@ -98,10 +98,26 @@ export function useHistory() {
     });
   }, []);
 
+  /**
+   * Re-insert a previously removed entry, preserving its original `ts`/`id`
+   * — the undo path for `remove` (HistoryScreen keeps the removed entry in
+   * component state for a few seconds and calls this if "Rückgängig" is
+   * tapped). Re-sorts by ts so it lands back in its original position rather
+   * than jumping to the top.
+   */
+  const restore = useCallback((entry: HistoryEntry) => {
+    setHistory((prev) => {
+      if (prev.some((e) => e.id === entry.id)) return prev;
+      const next = [...prev, entry].sort((a, b) => b.ts - a.ts).slice(0, MAX_ENTRIES);
+      persist(next);
+      return next;
+    });
+  }, []);
+
   const clear = useCallback(() => {
     setHistory([]);
     persist([]);
   }, []);
 
-  return { history, record, clear, remove, ready };
+  return { history, record, clear, remove, restore, ready };
 }

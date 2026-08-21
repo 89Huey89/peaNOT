@@ -33,7 +33,12 @@ export function Mono({
     <span
       style={{
         fontFamily: MONO,
-        fontSize: 10,
+        // 11px equivalent at the base scale — em so it also respects the
+        // "Größere Schrift" setting (.device's font-size, see app/page.tsx).
+        // Callers that need a smaller, fixed size (e.g. the Stamp's inner
+        // subline, sized to fit a fixed-diameter circle) pass an explicit
+        // fontSize below and win via the spread.
+        fontSize: "0.6875em",
         letterSpacing: ".14em",
         textTransform: "uppercase",
         ...style,
@@ -57,7 +62,7 @@ export function SectionTitle({
         fontFamily: SERIF,
         fontWeight: 800,
         fontStyle: italic ? "italic" : "normal",
-        fontSize: 26,
+        fontSize: "1.625em",
         letterSpacing: -0.4,
         margin: "0 0 10px",
       }}

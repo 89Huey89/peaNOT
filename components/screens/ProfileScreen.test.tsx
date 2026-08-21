@@ -94,3 +94,27 @@ describe("ProfileScreen vibration toggle", () => {
     expect(setPref).toHaveBeenCalledWith("haptic", true);
   });
 });
+
+describe("ProfileScreen font scale ('Größere Schrift')", () => {
+  it("is off (normal) by default and offers all three steps", () => {
+    renderScreen({ ...DEFAULT_PREFS, fontScale: "normal" });
+
+    expect(screen.getByRole("button", { name: "Normal" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Groß" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Sehr groß" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
+  it("picks the larger step", () => {
+    const { setPref } = renderScreen({ ...DEFAULT_PREFS, fontScale: "normal" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Sehr groß" }));
+
+    expect(setPref).toHaveBeenCalledWith("fontScale", "sehr-gross");
+  });
+});

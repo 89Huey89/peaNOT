@@ -80,7 +80,7 @@ function highlight(text: string, found: string | null | undefined, P: Palette): 
       <mark
         style={{
           background: P.RED,
-          color: "#fff",
+          color: P.FILL_TEXT,
           padding: "1px 5px",
           borderRadius: 3,
           fontWeight: 700,
@@ -304,7 +304,7 @@ export default function ResultScreen({
         right={
           <button
             type="button"
-            className="tap"
+            className="tap hit44"
             onClick={onBack}
             style={{
               background: "transparent",
@@ -313,7 +313,6 @@ export default function ResultScreen({
               fontFamily: "inherit",
               fontSize: 13.5,
               fontWeight: 600,
-              padding: "6px 4px",
             }}
           >
             <X size={14} aria-hidden="true" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 4 }} />Schließen
@@ -356,7 +355,7 @@ export default function ResultScreen({
               lineHeight: 1.45,
             }}
           >
-            <Mono style={{ opacity: 0.75, color: P.AMBER }}>offline</Mono>
+            <Mono style={{ opacity: 0.75, color: P.AMBER_TEXT }}>offline</Mono>
             <div style={{ marginTop: 3 }}>
               Offline — Ergebnis aus Abfrage vom{" "}
               {formatRelative(new Date(result.cachedAt).getTime())}.
@@ -396,7 +395,7 @@ export default function ResultScreen({
           style={{
             fontFamily: "'Fraunces', serif",
             fontStyle: "italic",
-            fontSize: 20,
+            fontSize: "1.25em",
             margin: "6px 0 14px",
             color: P.INK,
             lineHeight: 1.2,
@@ -454,14 +453,14 @@ export default function ResultScreen({
               </div>
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <Mono style={{ opacity: 0.55 }}>
+              <Mono style={{ opacity: 0.7 }}>
                 {result.brand ?? "—"} · ean {shortEan(result.barcode)}
               </Mono>
               <div
                 style={{
                   fontFamily: "'Fraunces', serif",
                   fontWeight: 700,
-                  fontSize: 20,
+                  fontSize: "1.25em",
                   lineHeight: 1.1,
                   marginTop: 2,
                 }}
@@ -529,7 +528,7 @@ export default function ResultScreen({
                     fontWeight: 800,
                     // The stamp keeps its 88px, so on narrow phones the verdict
                     // has to give: full size from ~390px up, smaller below.
-                    fontSize: "clamp(20px, 6.7vw, 26px)",
+                    fontSize: "clamp(1.25em, 6.7vw, 1.625em)",
                     color: fg,
                     lineHeight: 1.0,
                     marginTop: 3,
@@ -545,7 +544,7 @@ export default function ResultScreen({
                 </div>
                 <div
                   style={{
-                    fontSize: 12.5,
+                    fontSize: "0.78em",
                     marginTop: 6,
                     opacity: isUnknown ? 0.92 : 0.78,
                     lineHeight: 1.35,
@@ -783,7 +782,7 @@ export default function ResultScreen({
                 border: `1.5px dashed ${P.AMBER}`,
               }}
             >
-              <Mono style={{ opacity: 0.65, color: P.AMBER }}>vorbehalt</Mono>
+              <Mono style={{ opacity: 0.65, color: P.AMBER_TEXT }}>vorbehalt</Mono>
               {resolved.caveats.map((key) => (
                 <div key={key} style={{ marginTop: 6 }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5 }}>{CAVEATS[key].title}</div>
@@ -866,7 +865,7 @@ export default function ResultScreen({
               }}
             >
               <Mono style={{ opacity: 0.6 }}>belegstelle · zutaten</Mono>
-              <div style={{ fontSize: 13.5, marginTop: 5, lineHeight: 1.5 }}>
+              <div style={{ fontSize: "0.84em", marginTop: 5, lineHeight: 1.5 }}>
                 {highlight(result.ingredients, result.found, P)}
               </div>
             </div>
@@ -905,7 +904,7 @@ export default function ResultScreen({
                 lineHeight: 1.45,
               }}
             >
-              <Mono style={{ opacity: 0.65, color: dataStale ? P.AMBER : undefined }}>
+              <Mono style={{ opacity: 0.65, color: dataStale ? P.AMBER_TEXT : undefined }}>
                 datenstand · open food facts
               </Mono>
               <div style={{ marginTop: 4 }}>
@@ -999,13 +998,13 @@ export default function ResultScreen({
         </div>
 
         <div
-          style={{ display: "flex", justifyContent: "space-between", marginTop: 12, opacity: 0.6 }}
+          style={{ display: "flex", justifyContent: "space-between", marginTop: 12, opacity: 0.7 }}
         >
           <Mono>quelle · openfoodfacts</Mono>
           <Mono>ean · {result.barcode}</Mono>
         </div>
         {result.recall ? (
-          <div style={{ marginTop: 4, opacity: 0.6 }}>
+          <div style={{ marginTop: 4, opacity: 0.7 }}>
             <Mono>
               {result.recall.status === "unavailable"
                 ? "rückruf-abgleich · lebensmittelwarnung.de nicht erreichbar"

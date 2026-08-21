@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { palette } from "@/lib/theme";
+import { FONT_SCALE_FACTOR } from "@/lib/fontScale";
 import { unlockAudio } from "@/lib/feedback";
 import { isVerdictWorsening } from "@/lib/verdict";
 import { useProductLookup } from "@/components/useProductLookup";
@@ -19,7 +20,7 @@ type Route = "onboarding" | "scan" | "verlauf" | "profil" | "result" | "karte";
 
 export default function Home() {
   const { prefs, setPref, ready: prefsReady } = usePrefs();
-  const { history, record, clear, remove, ready: historyReady } = useHistory();
+  const { history, record, clear, remove, restore, ready: historyReady } = useHistory();
   const { loading, result, lookup } = useProductLookup();
 
   const [route, setRoute] = useState<Route | null>(null);
@@ -42,6 +43,7 @@ export default function Home() {
 
   const mode = prefs.theme === "system" ? (systemDark ? "dark" : "light") : prefs.theme;
   const P = palette(prefs.accent, mode);
+  const fontScale = FONT_SCALE_FACTOR[prefs.fontScale];
   const ready = prefsReady && historyReady;
 
   // Color the area around the app column (and behind safe-area insets).
@@ -147,6 +149,7 @@ export default function Home() {
         onOpen={openEntry}
         onClear={clear}
         onRemove={remove}
+        onRestore={restore}
         onTab={(t: Tab) => setRoute(t)}
       />
     );
@@ -236,6 +239,13 @@ export default function Home() {
           "--accent": P.ACCENT,
           "--green": P.GREEN,
           "--red": P.RED,
+          "--fill-text": P.FILL_TEXT,
+          "--font-scale": fontScale,
+          // "Größere Schrift" (Profil): scales .device's own font-size, which
+          // cascades to any descendant text sized in em (see components/ui.tsx
+          // Mono and the em-converted sizes on Result/Scan/History) — off
+          // (factor 1) by default.
+          fontSize: "calc(1em * var(--font-scale, 1))",
         } as React.CSSProperties
       }
     >

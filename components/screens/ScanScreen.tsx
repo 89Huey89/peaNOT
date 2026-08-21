@@ -98,7 +98,7 @@ export default function ScanScreen({
                 boxShadow: `0 0 0 3px ${online ? P.GREEN : P.AMBER}22`,
               }}
             />
-            <Mono style={{ opacity: 0.7, color: online ? undefined : P.AMBER }}>
+            <Mono style={{ opacity: 0.7, color: online ? undefined : P.AMBER_TEXT }}>
               {online ? "live" : "offline"}
             </Mono>
           </button>
@@ -203,21 +203,17 @@ export default function ScanScreen({
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                alignItems: "baseline",
+                alignItems: "center",
                 marginBottom: 8,
               }}
             >
               <Mono style={{ opacity: 0.6 }}>zuletzt geprüft</Mono>
               <button
                 type="button"
-                className="tap"
+                className="tap hit44"
                 onClick={() => onTab("verlauf")}
                 style={{
-                  fontSize: 12,
                   color: P.INK,
-                  opacity: 0.7,
-                  textDecoration: "underline",
-                  textUnderlineOffset: 3,
                   background: "transparent",
                   border: 0,
                   fontFamily: "inherit",
@@ -225,7 +221,16 @@ export default function ScanScreen({
                   cursor: "pointer",
                 }}
               >
-                Alle ansehen
+                <span
+                  style={{
+                    fontSize: 12,
+                    opacity: 0.7,
+                    textDecoration: "underline",
+                    textUnderlineOffset: 3,
+                  }}
+                >
+                  Alle ansehen
+                </span>
               </button>
             </div>
             <div
@@ -267,7 +272,7 @@ export default function ScanScreen({
                           height: 14,
                           borderRadius: 99,
                           background: fg,
-                          color: "#fff",
+                          color: P.FILL_TEXT,
                           fontSize: 9,
                           fontWeight: 800,
                           display: "grid",
@@ -277,14 +282,12 @@ export default function ScanScreen({
                       >
                         {verdictGlyph(h.verdict)}
                       </span>
-                      <Mono style={{ opacity: 0.55, fontSize: 9 }}>
-                        {formatRelative(h.ts)}
-                      </Mono>
+                      <Mono style={{ opacity: 0.7 }}>{formatRelative(h.ts)}</Mono>
                     </div>
                     <div
                       style={{
                         fontWeight: 700,
-                        fontSize: 13,
+                        fontSize: "0.8125em",
                         marginTop: 5,
                         lineHeight: 1.15,
                         textWrap: "pretty",
@@ -293,7 +296,7 @@ export default function ScanScreen({
                       {h.name}
                     </div>
                     <div
-                      style={{ fontSize: 11, color: fg, fontWeight: 600, marginTop: 3 }}
+                      style={{ fontSize: "0.6875em", color: fg, fontWeight: 600, marginTop: 3 }}
                     >
                       {VERDICT[h.verdict].label}
                     </div>

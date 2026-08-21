@@ -41,6 +41,10 @@ export default function ProductSearch({ P, onSelect, disabled }: ProductSearchPr
           setValue(e.target.value);
           search(e.target.value);
         }}
+        // >=16px so iOS Safari doesn't zoom the page on focus — explicit here
+        // rather than relying on .manual-entry's CSS specificity to win over
+        // .history-search's 14px.
+        style={{ fontSize: "1rem" }}
       />
 
       {tooShort ? (

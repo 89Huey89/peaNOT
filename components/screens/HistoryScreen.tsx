@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import { VERDICT, verdictColor, verdictGlyph, type Verdict } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
@@ -17,12 +17,61 @@ const FILTERS: { label: string; verdict: Verdict | null }[] = [
   { label: "Unbekannt", verdict: "unknown" },
 ];
 
+const UNDO_MS = 5000;
+
+/** A filter pill whose tap target reaches 44×44pt without growing the pill
+ * itself — see .hit44 in globals.css. */
+function FilterChip({
+  P,
+  active,
+  onClick,
+  children,
+}: {
+  P: Palette;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="tap hit44"
+      aria-pressed={active}
+      onClick={onClick}
+      style={{
+        flexShrink: 0,
+        background: "transparent",
+        border: 0,
+        padding: 0,
+        fontFamily: "inherit",
+      }}
+    >
+      <span
+        style={{
+          display: "inline-block",
+          background: active ? P.INK : "transparent",
+          color: active ? P.BG : P.INK,
+          border: active ? 0 : `1px solid ${P.INK}33`,
+          borderRadius: 99,
+          padding: "7px 12px",
+          fontSize: 12.5,
+          fontWeight: 600,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {children}
+      </span>
+    </button>
+  );
+}
+
 export default function HistoryScreen({
   P,
   history,
   onOpen,
   onClear,
   onRemove,
+  onRestore,
   onTab,
 }: {
   P: Palette;
@@ -30,10 +79,37 @@ export default function HistoryScreen({
   onOpen: (entry: HistoryEntry) => void;
   onClear: () => void;
   onRemove: (id: string) => void;
+  onRestore: (entry: HistoryEntry) => void;
   onTab: (t: Tab) => void;
 }) {
   const [filter, setFilter] = useState<Verdict | null>(null);
   const [query, setQuery] = useState("");
+
+  // "Rückgängig" snackbar: the removed entry stays here for UNDO_MS so a
+  // mis-tap on the small delete target is recoverable — useHistory (the
+  // actual source of truth) already dropped it the moment the X was tapped.
+  const [pendingUndo, setPendingUndo] = useState<HistoryEntry | null>(null);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+    };
+  }, []);
+
+  function handleRemove(entry: HistoryEntry) {
+    onRemove(entry.id);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setPendingUndo(entry);
+    undoTimer.current = setTimeout(() => setPendingUndo(null), UNDO_MS);
+  }
+
+  function handleUndo() {
+    if (!pendingUndo) return;
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    onRestore(pendingUndo);
+    setPendingUndo(null);
+  }
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -102,30 +178,16 @@ export default function HistoryScreen({
         className="scroll"
         style={{ display: "flex", gap: 6, padding: "10px 22px 6px", overflowX: "auto" }}
       >
-        {FILTERS.map((f) => {
-          const active = f.verdict === filter;
-          return (
-            <button
-              key={f.label}
-              type="button"
-              className="tap"
-              onClick={() => setFilter(f.verdict)}
-              style={{
-                background: active ? P.INK : "transparent",
-                color: active ? P.BG : P.INK,
-                border: active ? 0 : `1px solid ${P.INK}33`,
-                borderRadius: 99,
-                padding: "7px 12px",
-                fontSize: 12.5,
-                fontWeight: 600,
-                fontFamily: "inherit",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {f.label}
-            </button>
-          );
-        })}
+        {FILTERS.map((f) => (
+          <FilterChip
+            key={f.label}
+            P={P}
+            active={f.verdict === filter}
+            onClick={() => setFilter(f.verdict)}
+          >
+            {f.label}
+          </FilterChip>
+        ))}
       </div>
 
       <div
@@ -193,7 +255,7 @@ export default function HistoryScreen({
                         borderRadius: 99,
                         background: fg,
                         border: `2px solid ${P.BG}`,
-                        color: "#fff",
+                        color: P.FILL_TEXT,
                         fontSize: 10,
                         fontWeight: 800,
                         display: "grid",
@@ -212,13 +274,13 @@ export default function HistoryScreen({
                         alignItems: "baseline",
                       }}
                     >
-                      <Mono style={{ opacity: 0.55 }}>{h.brand}</Mono>
-                      <Mono style={{ opacity: 0.45, fontSize: 9 }}>{formatRelative(h.ts)}</Mono>
+                      <Mono style={{ opacity: 0.7 }}>{h.brand}</Mono>
+                      <Mono style={{ opacity: 0.7 }}>{formatRelative(h.ts)}</Mono>
                     </div>
                     <div
                       style={{
                         fontWeight: 600,
-                        fontSize: 14.5,
+                        fontSize: "0.906em",
                         marginTop: 1,
                         lineHeight: 1.2,
                         textWrap: "pretty",
@@ -228,7 +290,7 @@ export default function HistoryScreen({
                     </div>
                     <div
                       style={{
-                        fontSize: 12,
+                        fontSize: "0.75em",
                         color: fg,
                         fontWeight: 600,
                         marginTop: 2,
@@ -241,8 +303,8 @@ export default function HistoryScreen({
                 </button>
                 <button
                   type="button"
-                  className="tap"
-                  onClick={() => onRemove(h.id)}
+                  className="tap hit44"
+                  onClick={() => handleRemove(h)}
                   aria-label={`„${h.name}" aus dem Verlauf entfernen`}
                   style={{
                     background: "transparent",
@@ -250,7 +312,6 @@ export default function HistoryScreen({
                     color: P.DIM,
                     fontSize: 18,
                     lineHeight: 1,
-                    padding: "10px 4px 10px 14px",
                     cursor: "pointer",
                     fontFamily: "inherit",
                     flexShrink: 0,
@@ -299,6 +360,48 @@ export default function HistoryScreen({
           </div>
         ) : null}
       </div>
+
+      {pendingUndo ? (
+        <div
+          role="status"
+          style={{
+            position: "absolute",
+            left: 16,
+            right: 16,
+            bottom: "calc(78px + env(safe-area-inset-bottom))",
+            zIndex: 20,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: "12px 8px 12px 16px",
+            borderRadius: 14,
+            background: P.INK,
+            color: P.BG,
+            boxShadow: `0 12px 32px -14px ${P.INK}, 0 2px 8px ${P.INK}33`,
+          }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 600, minWidth: 0, flex: 1 }}>
+            „{pendingUndo.name}" entfernt.
+          </span>
+          <button
+            type="button"
+            className="tap hit44"
+            onClick={handleUndo}
+            style={{
+              flexShrink: 0,
+              background: "transparent",
+              border: 0,
+              color: P.ACCENT,
+              fontWeight: 700,
+              fontSize: 13,
+              fontFamily: "inherit",
+            }}
+          >
+            Rückgängig
+          </button>
+        </div>
+      ) : null}
 
       <TabBar P={P} tab="verlauf" onTab={onTab} />
     </AppShell>
