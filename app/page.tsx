@@ -72,8 +72,13 @@ export default function Home() {
   const ready = prefsReady && historyReady && favoritesReady;
 
   // Color the area around the app column (and behind safe-area insets).
+  // Also set on <html>, not just <body>: globals.css hard-codes html's
+  // background for the pre-hydration paint, and iOS rubber-band overscroll
+  // reveals whatever's behind the document — without this, dark mode still
+  // flashed the light default there.
   useEffect(() => {
     document.body.style.background = P.OUTER;
+    document.documentElement.style.background = P.OUTER;
   }, [P.OUTER]);
 
   // The static theme-color <meta> pair in layout.tsx only tracks the OS
