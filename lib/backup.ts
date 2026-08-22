@@ -117,8 +117,17 @@ function isVerdict(value: unknown): value is Verdict {
 }
 
 /** Drop anything that isn't a well-formed history entry — a malformed row in
- * an imported file is skipped, not allowed to crash the whole import. */
-function sanitizeHistory(value: unknown): HistoryEntry[] {
+ * an imported file is skipped, not allowed to crash the whole import.
+ *
+ * Exported so components/useHistory.ts's load() can run the exact same
+ * check on whatever is already sitting in localStorage (Befund 02): a
+ * corrupt row that made it into storage some other way (a future bug, a
+ * hand-edited value, a botched migration) must not crash every future
+ * launch just because it once got written. This file's only import *from*
+ * components/useHistory.ts is `import type { HistoryEntry }` above, which
+ * TypeScript erases at compile time — so useHistory.ts importing a value
+ * from here in return does not create a runtime import cycle. */
+export function sanitizeHistory(value: unknown): HistoryEntry[] {
   if (!Array.isArray(value)) return [];
   const out: HistoryEntry[] = [];
   for (const item of value) {

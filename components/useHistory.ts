@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ProductResult } from "@/lib/types";
 import { resolveVerdict, type Verdict } from "@/lib/verdict";
 import { applyPackMatch, readPackMatch } from "@/lib/packmatch";
-import { mergeHistory } from "@/lib/backup";
+import { mergeHistory, sanitizeHistory } from "@/lib/backup";
 
 const STORAGE_KEY = "peanot.history.v1";
 const MAX_ENTRIES = 200;
@@ -25,7 +25,16 @@ function load(): HistoryEntry[] {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
+    // Befund 02: the old `Array.isArray(parsed) ? parsed : []` trusted every
+    // element's shape completely. One row with a verdict string VERDICT
+    // (lib/verdict.ts) doesn't know, a missing field, or a non-object
+    // element was enough for verdictColor() to throw "Cannot read
+    // properties of undefined (reading 'colorKey')" on every render — a
+    // white screen on every single launch, since the bad value never left
+    // localStorage. sanitizeHistory (lib/backup.ts, shared with the F1
+    // import path) drops only the malformed row(s); everything else in the
+    // array survives untouched.
+    return sanitizeHistory(parsed);
   } catch {
     return [];
   }
@@ -67,6 +76,28 @@ function toEntry(result: ProductResult, ts: number): HistoryEntry {
 }
 
 /**
+ * Collapse a newest-first list to at most one row per barcode, keeping
+ * whichever occurrence comes first (i.e. the newest, since every caller
+ * passes an already newest-first — sorted by ts descending — list).
+ *
+ * Befund 06: the history is a product list, not an event log — a barcode
+ * should appear once, wherever it currently sits, not once per scan.
+ * Shared by restore() and importEntries() below; record() enforces the
+ * same rule inline (see its own comment) since it already knows the new
+ * entry is the newest by construction.
+ */
+function dedupeNewestPerBarcode(entries: HistoryEntry[]): HistoryEntry[] {
+  const seen = new Set<string>();
+  const out: HistoryEntry[] = [];
+  for (const entry of entries) {
+    if (seen.has(entry.barcode)) continue;
+    seen.add(entry.barcode);
+    out.push(entry);
+  }
+  return out;
+}
+
+/**
  * Scan history persisted to the browser (localStorage) — no account, no
  * server. Survives reloads on the same device.
  */
@@ -82,9 +113,15 @@ export function useHistory() {
   const record = useCallback((result: ProductResult) => {
     const entry = toEntry(result, Date.now());
     setHistory((prev) => {
-      // Collapse a repeat scan of the same barcode at the top into one row.
-      const deduped =
-        prev[0]?.barcode === entry.barcode ? prev.slice(1) : prev;
+      // Befund 06: collapse a repeat scan of this barcode wherever it sits
+      // in the list, not only when it happens to be the very last scan.
+      // Checking the whole list (not just prev[0]) matters for exactly the
+      // scenario the finding describes: checking five familiar products in
+      // a row before a shopping trip used to create five new rows apiece
+      // every single time, so at a 200-entry cap the weekly favorites
+      // pass eventually pushes out the rarely-scanned products whose
+      // verdict you actually needed the history for.
+      const deduped = prev.filter((e) => e.barcode !== entry.barcode);
       const next = [entry, ...deduped].slice(0, MAX_ENTRIES);
       persist(next);
       return next;
@@ -109,7 +146,15 @@ export function useHistory() {
   const restore = useCallback((entry: HistoryEntry) => {
     setHistory((prev) => {
       if (prev.some((e) => e.id === entry.id)) return prev;
-      const next = [...prev, entry].sort((a, b) => b.ts - a.ts).slice(0, MAX_ENTRIES);
+      // Befund 06: apply the same barcode-is-the-identity rule as record().
+      // Undo is held in HistoryScreen's own component state for a few
+      // seconds after a remove, during which a fresh scan of that very
+      // barcode could land and add a new row — restoring the old row on
+      // top of that must not produce two rows for one barcode. Sorting the
+      // combined list newest-first before deduping means whichever of the
+      // two actually has the newer `ts` wins; the older one is dropped.
+      const merged = [...prev, entry].sort((a, b) => b.ts - a.ts);
+      const next = dedupeNewestPerBarcode(merged).slice(0, MAX_ENTRIES);
       persist(next);
       return next;
     });
@@ -128,7 +173,18 @@ export function useHistory() {
    */
   const importEntries = useCallback((entries: HistoryEntry[]) => {
     setHistory((prev) => {
-      const next = mergeHistory(prev, entries, MAX_ENTRIES);
+      // mergeHistory (lib/backup.ts) dedupes by id, falling back to
+      // barcode+ts — it doesn't know about Befund 06's barcode-is-the-
+      // identity rule, since it's the same merge used for prefs/notes-style
+      // imports that have no such rule. An imported file can still contain
+      // two rows for one barcode (two scan times from another device, or
+      // one on each side of the merge with different ids), so a second
+      // pass here collapses those to one row too, exactly like a live
+      // scan would. maxEntries is left uncapped for the merge itself so a
+      // pair that *would* dedupe away isn't lost to truncation before this
+      // pass gets to run; the real MAX_ENTRIES cap is applied after.
+      const merged = mergeHistory(prev, entries, Number.POSITIVE_INFINITY);
+      const next = dedupeNewestPerBarcode(merged).slice(0, MAX_ENTRIES);
       persist(next);
       return next;
     });
