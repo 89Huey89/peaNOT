@@ -48,7 +48,6 @@ export default function Error({ error, reset }: ErrorScreenProps) {
   // hand along — the UI below deliberately never shows a raw stack trace to
   // someone who is not debugging, only the short digest Next.js attaches.
   useEffect(() => {
-    // eslint-disable-next-line no-console
     console.error("peaNOT — unbehandelter Fehler:", error);
   }, [error]);
 
