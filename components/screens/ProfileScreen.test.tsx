@@ -31,6 +31,7 @@ function renderScreen(
       historyCount: 0,
       packmatchCount: 0,
       notesCount: 0,
+      favoritesCount: 0,
       prefs: {},
     }));
   render(
@@ -191,6 +192,14 @@ describe("ProfileScreen backup export/import (F1)", () => {
     });
   }
 
+  it("mentions favorites alongside history/notes/settings in the backup description (F2)", () => {
+    renderScreen(DEFAULT_PREFS);
+
+    expect(
+      screen.getByText(/Eine Datei mit Verlauf, Notizen, Favoriten und Einstellungen/),
+    ).toBeInTheDocument();
+  });
+
   it("exports on tap without touching prefs", () => {
     const { onExport, setPref } = renderScreen(DEFAULT_PREFS);
 
@@ -200,12 +209,13 @@ describe("ProfileScreen backup export/import (F1)", () => {
     expect(setPref).not.toHaveBeenCalled();
   });
 
-  it("shows a merge summary after a successful import", async () => {
+  it("shows a merge summary after a successful import, including favorites (F2)", async () => {
     const onImportFile = vi.fn<(raw: string) => ImportOutcome>(() => ({
       ok: true,
       historyCount: 3,
       packmatchCount: 1,
       notesCount: 2,
+      favoritesCount: 4,
       prefs: {},
     }));
     renderScreen(DEFAULT_PREFS, { onImportFile });
@@ -214,7 +224,9 @@ describe("ProfileScreen backup export/import (F1)", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText("Übernommen: 3 Scan(s), 2 Notiz(en), 1 Packungs-Antwort(en)."),
+        screen.getByText(
+          "Übernommen: 3 Scan(s), 2 Notiz(en), 1 Packungs-Antwort(en), 4 Favorit(en).",
+        ),
       ).toBeInTheDocument(),
     );
     expect(onImportFile).toHaveBeenCalledWith('{"format":"peanot-export"}');
@@ -240,6 +252,7 @@ describe("ProfileScreen backup export/import (F1)", () => {
       historyCount: 0,
       packmatchCount: 0,
       notesCount: 0,
+      favoritesCount: 0,
       prefs: { accent: "clay" },
     }));
     const { importPrefs } = renderScreen(DEFAULT_PREFS, { onImportFile });
@@ -261,6 +274,7 @@ describe("ProfileScreen backup export/import (F1)", () => {
       historyCount: 0,
       packmatchCount: 0,
       notesCount: 0,
+      favoritesCount: 0,
       prefs: { accent: "clay" },
     }));
     const { importPrefs } = renderScreen(DEFAULT_PREFS, { onImportFile });
@@ -279,6 +293,7 @@ describe("ProfileScreen backup export/import (F1)", () => {
       historyCount: 1,
       packmatchCount: 0,
       notesCount: 0,
+      favoritesCount: 0,
       prefs: {},
     }));
     renderScreen(DEFAULT_PREFS, { onImportFile });

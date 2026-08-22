@@ -226,7 +226,7 @@ export default function ProfileScreen({
         return;
       }
       setImportSummary(
-        `Übernommen: ${outcome.historyCount} Scan(s), ${outcome.notesCount} Notiz(en), ${outcome.packmatchCount} Packungs-Antwort(en).`,
+        `Übernommen: ${outcome.historyCount} Scan(s), ${outcome.notesCount} Notiz(en), ${outcome.packmatchCount} Packungs-Antwort(en), ${outcome.favoritesCount} Favorit(en).`,
       );
       setPendingPrefs(Object.keys(outcome.prefs).length > 0 ? outcome.prefs : null);
     };
@@ -542,8 +542,8 @@ export default function ProfileScreen({
           >
             <div style={{ fontSize: 14, fontWeight: 600 }}>Sichern &amp; übertragen</div>
             <p style={{ margin: "3px 0 10px", fontSize: 12.5, opacity: 0.7, lineHeight: 1.4 }}>
-              Eine Datei mit Verlauf, Notizen und Einstellungen — z. B. per AirDrop aufs
-              andere Familien-Handy.
+              Eine Datei mit Verlauf, Notizen, Favoriten und Einstellungen — z. B. per
+              AirDrop aufs andere Familien-Handy.
             </p>
             <div style={{ display: "flex", gap: 8 }}>
               <button

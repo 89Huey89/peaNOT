@@ -5,8 +5,10 @@ import type { HistoryEntry } from "@/components/useHistory";
 import type { Prefs } from "@/components/usePrefs";
 import { readAllPackMatch, writeAllPackMatch } from "@/lib/packmatch";
 import { readAllNotes, writeAllNotes } from "@/lib/notes";
+import { readFavoriteStore, writeFavoriteStore } from "@/lib/favorites";
 import {
   buildExportPayload,
+  mergeFavorites,
   mergeNotes,
   mergePackMatch,
   parseImportFile,
@@ -18,6 +20,7 @@ export type ImportOutcome =
       historyCount: number;
       packmatchCount: number;
       notesCount: number;
+      favoritesCount: number;
       /** Parsed but NOT applied — ProfileScreen only calls importPrefs after
        * an explicit user confirmation (see README's F1 section). */
       prefs: Partial<Prefs>;
@@ -29,8 +32,14 @@ export type ImportOutcome =
  * localStorage-backed stores (F1). History merges through useHistory's own
  * importEntries (it owns that store's React state); pack-match and notes
  * have no top-level React state, so they are read/merged/written directly
- * here. Prefs are deliberately never written here — only after ProfileScreen
- * gets an explicit confirmation does it call usePrefs' own importPrefs.
+ * here. Favorites (F2) *do* have their own top-level React state
+ * (components/useFavorites.ts) — unlike pack-match/notes — but that hook
+ * doesn't need a prop threaded in here to stay in sync: lib/favorites.ts's
+ * writeFavoriteStore persists through the exact same module useFavorites.ts
+ * already subscribes to (subscribeFavorites), so a mounted instance picks up
+ * an import immediately, the same way it already does for a live toggle.
+ * Prefs are deliberately never written here — only after ProfileScreen gets
+ * an explicit confirmation does it call usePrefs' own importPrefs.
  */
 export function useBackup({
   history,
@@ -47,6 +56,7 @@ export function useBackup({
       prefs,
       packmatch: readAllPackMatch(),
       notes: readAllNotes(),
+      favorites: readFavoriteStore(),
     });
     const json = JSON.stringify(payload, null, 2);
     const filename = `peanot-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -92,11 +102,13 @@ export function useBackup({
       importHistory(data.history);
       writeAllPackMatch(mergePackMatch(readAllPackMatch(), data.packmatch));
       writeAllNotes(mergeNotes(readAllNotes(), data.notes));
+      writeFavoriteStore(mergeFavorites(readFavoriteStore(), data.favorites));
       return {
         ok: true,
         historyCount: data.history.length,
         packmatchCount: Object.keys(data.packmatch).length,
         notesCount: Object.keys(data.notes).length,
+        favoritesCount: Object.keys(data.favorites).length,
         prefs: data.prefs,
       };
     },
