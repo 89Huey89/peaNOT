@@ -10,6 +10,7 @@ import { usePrefs } from "@/components/usePrefs";
 import { useHistoryOverlay } from "@/components/useHistoryOverlay";
 import { useHistory, resolveHistoryVerdict, type HistoryEntry } from "@/components/useHistory";
 import { useFavorites } from "@/components/useFavorites";
+import { useRecallWatch } from "@/components/useRecallWatch";
 import { useBackup } from "@/components/useBackup";
 import { Logo, type Tab } from "@/components/ui";
 import OnboardingScreen from "@/components/screens/OnboardingScreen";
@@ -51,6 +52,11 @@ export default function Home() {
     ready: favoritesReady,
   } = useFavorites();
   const { loading, result, lookup } = useProductLookup();
+  // F5 (Rückruf-Wächter): checks favorites + recent history against official
+  // recall notices independent of any scan — see components/useRecallWatch.ts
+  // for the throttling/acknowledgement rules. Fed the same favorites/history
+  // arrays ScanScreen already renders, so no separate store is needed here.
+  const { hits: recallHits, acknowledge: acknowledgeRecall } = useRecallWatch(favorites, history);
   const { exportData, importData } = useBackup({ history, importHistory: importEntries, prefs });
 
   const [route, setRoute] = useState<Route | null>(null);
@@ -306,6 +312,9 @@ export default function Home() {
             autoStartCamera={prefs.autoStartCamera}
             history={history}
             favorites={favorites}
+            recallHits={recallHits}
+            onAcknowledgeRecall={acknowledgeRecall}
+            emergencyPlan={prefs.emergencyPlan}
             onDetected={runLookup}
             onOpen={openEntry}
             onOpenFavorite={openFavorite}

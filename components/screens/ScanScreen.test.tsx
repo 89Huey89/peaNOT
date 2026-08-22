@@ -3,6 +3,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ScanScreen from "@/components/screens/ScanScreen";
 import { palette } from "@/lib/theme";
+import { DEFAULT_EMERGENCY_PLAN, type EmergencyPlan } from "@/lib/emergency";
+import type { RecallWatchHit } from "@/lib/recalls/watch";
 
 // BarcodeScanner owns real camera access (@zxing/browser, getUserMedia) —
 // irrelevant to the bottom-sheet behavior under test here (UX8), so it's
@@ -52,11 +54,18 @@ function renderScreen(
     ts: number;
     addedAt: number;
   }> = [],
-  opts: { autoStartCamera?: boolean; loading?: boolean; history?: HistoryEntryLike[] } = {},
+  opts: {
+    autoStartCamera?: boolean;
+    loading?: boolean;
+    history?: HistoryEntryLike[];
+    recallHits?: RecallWatchHit[];
+    emergencyPlan?: EmergencyPlan;
+  } = {},
 ) {
   const onDetected = vi.fn();
   const onOpenFavorite = vi.fn();
   const onOpenNotfall = vi.fn();
+  const onAcknowledgeRecall = vi.fn();
   const { container } = render(
     <ScanScreen
       P={palette("mustard")}
@@ -67,6 +76,9 @@ function renderScreen(
       autoStartCamera={opts.autoStartCamera ?? false}
       history={opts.history ?? []}
       favorites={favorites}
+      recallHits={opts.recallHits ?? []}
+      onAcknowledgeRecall={onAcknowledgeRecall}
+      emergencyPlan={opts.emergencyPlan ?? DEFAULT_EMERGENCY_PLAN}
       onDetected={onDetected}
       onOpen={vi.fn()}
       onOpenFavorite={onOpenFavorite}
@@ -75,7 +87,7 @@ function renderScreen(
       onTab={vi.fn()}
     />,
   );
-  return { onDetected, onOpenFavorite, onOpenNotfall, container };
+  return { onDetected, onOpenFavorite, onOpenNotfall, onAcknowledgeRecall, container };
 }
 
 async function openManual() {
@@ -364,5 +376,146 @@ describe("ScanScreen search results show known verdicts (Befund 11)", () => {
     await openSearch();
 
     expect(screen.queryByLabelText(/Zuletzt geprüft/)).not.toBeInTheDocument();
+  });
+});
+
+describe("ScanScreen Rückruf-Wächter strip (F5)", () => {
+  const hit = {
+    barcode: "4011200296908",
+    name: "ültje Erdnüsse pikant gewürzt",
+    brand: "ültje",
+    match: {
+      title: "ültje Erdnüsse pikant gewürzt, 180 Gramm",
+      link: "https://www.lebensmittelwarnung.de/x",
+      publishedDate: 1_700_000_000_000,
+    },
+  };
+
+  it("shows nothing when there are no watched recall hits", () => {
+    renderScreen([], { recallHits: [] });
+
+    expect(screen.queryByText(/Rückruf/)).not.toBeInTheDocument();
+  });
+
+  it("never claims there are no recalls — no such text renders at all", () => {
+    renderScreen([], { recallHits: [] });
+
+    expect(screen.queryByText(/keine Rückrufe/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a singular strip for exactly one hit", () => {
+    renderScreen([], { recallHits: [hit] });
+
+    expect(
+      screen.getByText("1 Rückruf betrifft möglicherweise ein Stammprodukt"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a plural strip for more than one hit", () => {
+    renderScreen([], {
+      recallHits: [hit, { ...hit, barcode: "20137946", name: "Reiswaffel" }],
+    });
+
+    expect(
+      screen.getByText("2 Rückrufe betreffen möglicherweise Stammprodukte"),
+    ).toBeInTheDocument();
+  });
+
+  it("reveals the affected product, the notice and a link on tap", async () => {
+    renderScreen([], { recallHits: [hit] });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /1 Rückruf betrifft möglicherweise ein Stammprodukt/ }),
+    );
+
+    expect(screen.getByText(hit.name)).toBeInTheDocument();
+    expect(screen.getByText(hit.match.title)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Meldung öffnen/ })).toHaveAttribute(
+      "href",
+      hit.match.link,
+    );
+  });
+
+  it("acknowledges a hit via the strip's own control", async () => {
+    const { onAcknowledgeRecall } = renderScreen([], { recallHits: [hit] });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /1 Rückruf betrifft möglicherweise ein Stammprodukt/ }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Geprüft, ausblenden" }));
+
+    expect(onAcknowledgeRecall).toHaveBeenCalledWith(hit.barcode, hit.match);
+  });
+
+  it("places the recall strip before the camera's own heading", () => {
+    renderScreen([], { recallHits: [hit] });
+
+    const stripButton = screen.getByRole("button", {
+      name: /1 Rückruf betrifft möglicherweise ein Stammprodukt/,
+    });
+    const cameraHeading = screen.getByText("Halte einen Code vor die Kamera.");
+
+    expect(
+      stripButton.compareDocumentPosition(cameraHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
+describe("ScanScreen Pen-Ablaufwarnung (Zusatz)", () => {
+  function planWithPen(expiresOn: string): EmergencyPlan {
+    return { ...DEFAULT_EMERGENCY_PLAN, pens: [{ label: "Rucksack", expiresOn }] };
+  }
+
+  it("shows nothing when there are no pens", () => {
+    renderScreen([], { emergencyPlan: DEFAULT_EMERGENCY_PLAN });
+
+    expect(screen.queryByText(/Adrenalin-Pen/)).not.toBeInTheDocument();
+  });
+
+  it("shows nothing when every pen is well within date", () => {
+    const farFuture = new Date();
+    farFuture.setFullYear(farFuture.getFullYear() + 2);
+    renderScreen([], {
+      emergencyPlan: planWithPen(farFuture.toISOString().slice(0, 10)),
+    });
+
+    expect(screen.queryByText(/Adrenalin-Pen/)).not.toBeInTheDocument();
+  });
+
+  it("shows a red hint for an expired pen and opens Notfallplan on tap", async () => {
+    const { onOpenNotfall } = renderScreen([], {
+      emergencyPlan: planWithPen("2020-01-01"),
+    });
+
+    const hint = screen.getByText("Ein Adrenalin-Pen ist abgelaufen — Notfallplan prüfen.");
+    expect(hint).toBeInTheDocument();
+
+    await userEvent.click(hint);
+    expect(onOpenNotfall).toHaveBeenCalled();
+  });
+
+  it("shows an amber hint for a pen expiring soon", () => {
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 10);
+    renderScreen([], { emergencyPlan: planWithPen(soon.toISOString().slice(0, 10)) });
+
+    expect(
+      screen.getByText("Ein Adrenalin-Pen läuft bald ab — Notfallplan prüfen."),
+    ).toBeInTheDocument();
+  });
+
+  it("stays quiet for a pen with no date entered yet", () => {
+    renderScreen([], { emergencyPlan: planWithPen("") });
+
+    expect(screen.queryByText(/Adrenalin-Pen/)).not.toBeInTheDocument();
+  });
+
+  it("is clearly less prominent than the recall strip (no bordered card)", () => {
+    renderScreen([], { emergencyPlan: planWithPen("2020-01-01") });
+
+    const hint = screen.getByText("Ein Adrenalin-Pen ist abgelaufen — Notfallplan prüfen.");
+    // The recall strip is a bordered button with a background tint; the pen
+    // hint must not adopt that same treatment.
+    expect(hint).toHaveStyle({ background: "transparent" });
   });
 });

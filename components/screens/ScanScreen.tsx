@@ -8,10 +8,37 @@ import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
 import type { FavoriteEntry } from "@/lib/favorites";
 import { useOnlineStatus } from "@/components/useOnlineStatus";
+import type { RecallWatchHit } from "@/lib/recalls/watch";
+import type { RecallMatch } from "@/lib/types";
+import { getPenStatus, type EmergencyPlan } from "@/lib/emergency";
 import ManualEntry from "@/components/ManualEntry";
 import ProductSearch from "@/components/ProductSearch";
 import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { IdCard, Keyboard, Languages, Search, Siren, Star, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ExternalLink,
+  IdCard,
+  Keyboard,
+  Languages,
+  Search,
+  Siren,
+  Star,
+  X,
+} from "lucide-react";
+
+/**
+ * F5 (Rückruf-Wächter): a single hard-coded German date formatter for the
+ * "gemeldet am" line under a watched recall hit — same idea as
+ * ResultScreen's own formatRecallDate, kept local here since ScanScreen may
+ * not import from a screen it doesn't own.
+ */
+function formatRecallDate(ms: number): string {
+  return new Date(ms).toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
 
 const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
   ssr: false,
@@ -37,6 +64,9 @@ export default function ScanScreen({
   autoStartCamera,
   history,
   favorites,
+  recallHits,
+  onAcknowledgeRecall,
+  emergencyPlan,
   onDetected,
   onOpen,
   onOpenFavorite,
@@ -55,6 +85,18 @@ export default function ScanScreen({
   history: HistoryEntry[];
   /** Starred staples (F2), most recently starred first. */
   favorites: FavoriteEntry[];
+  /** F5 (Rückruf-Wächter): unacknowledged recall notices against a watched
+   * favorite/history product (components/useRecallWatch.ts). Warn-only,
+   * same as the scan-time check: never changes a verdict, a history entry
+   * or a favorite — purely "go look at this". Empty when nothing is due to
+   * show, which must never be read or shown as "keine Rückrufe". */
+  recallHits: RecallWatchHit[];
+  /** Quittiert exactly one notice for one barcode (fail-safe: never deletes
+   * the underlying match/history/favorite, only hides that one strip). */
+  onAcknowledgeRecall: (barcode: string, match: RecallMatch) => void;
+  /** F4 pens: read-only here — only used for the dezent Ablaufwarnung
+   * below, never edited from this screen. */
+  emergencyPlan: EmergencyPlan;
   onDetected: (barcode: string) => void;
   onOpen: (entry: HistoryEntry) => void;
   /** Re-runs the ordinary lookup flow for a starred barcode — same as
@@ -70,6 +112,11 @@ export default function ScanScreen({
   const [sheet, setSheet] = useState<EntrySheet>(null);
   const sheetOpen = sheet !== null;
   const online = useOnlineStatus();
+  // F5: whether the recall strip's detail (which product, which notice) is
+  // expanded. Collapsed by default — the strip itself is the attention-
+  // getter, the detail is one tap away, matching the task's "angetippt
+  // zeigt er, welches Produkt und welche Meldung".
+  const [recallExpanded, setRecallExpanded] = useState(false);
   // Whichever toggle button was tapped to open (or last switch) the sheet —
   // captured on click, *before* ManualEntry's/ProductSearch's own autoFocus
   // grabs focus during the same commit (too early for an effect here to
@@ -182,6 +229,42 @@ export default function ScanScreen({
     return map;
   }, [history, favorites]);
 
+  // Pen-Ablaufwarnung (Zusatz): a *dezenter* reminder, deliberately far
+  // quieter than the recall strip below — this is a printed expiry date,
+  // not an acute safety signal, and the app is not a medical device. Only
+  // ever renders something when at least one pen is expired or due soon;
+  // "ok"/"unknown" pens produce no line at all (no all-clear state, per the
+  // task). Expired takes priority over "läuft bald ab" when both exist.
+  const penWarning = useMemo(() => {
+    const today = new Date();
+    let expired = 0;
+    let soon = 0;
+    for (const pen of emergencyPlan.pens) {
+      const status = getPenStatus(pen.expiresOn, today);
+      if (status === "expired") expired++;
+      else if (status === "soon") soon++;
+    }
+    if (expired > 0) {
+      return {
+        tone: "expired" as const,
+        text:
+          expired === 1
+            ? "Ein Adrenalin-Pen ist abgelaufen — Notfallplan prüfen."
+            : `${expired} Adrenalin-Pens sind abgelaufen — Notfallplan prüfen.`,
+      };
+    }
+    if (soon > 0) {
+      return {
+        tone: "soon" as const,
+        text:
+          soon === 1
+            ? "Ein Adrenalin-Pen läuft bald ab — Notfallplan prüfen."
+            : `${soon} Adrenalin-Pens laufen bald ab — Notfallplan prüfen.`,
+      };
+    }
+    return null;
+  }, [emergencyPlan.pens]);
+
   return (
     <AppShell P={P}>
       {/* inert freezes focus/AT navigation and pointer events behind the
@@ -238,6 +321,161 @@ export default function ScanScreen({
         className="scroll"
         style={{ flex: 1, overflowY: "auto", padding: "4px 22px 96px" }}
       >
+        {/* F5 (Rückruf-Wächter): ganz oben im Inhaltsbereich, oberhalb des
+            Kamerakastens — a product that was clean at scan time and got an
+            official recall notice since is exactly the case a green stamp
+            never surfaces on its own, so this can't sit below the fold.
+            Warn-only, same as the scan-time recall card: never changes a
+            verdict, a history entry or a favorite. Absent entirely (not a
+            muted "keine Rückrufe" line) whenever recallHits is empty — a
+            silent miss must never read as reassurance. */}
+        {recallHits.length > 0 ? (
+          <div style={{ marginBottom: 14 }}>
+            <button
+              type="button"
+              className="tap"
+              onClick={() => setRecallExpanded((v) => !v)}
+              aria-expanded={recallExpanded}
+              aria-controls="recall-watch-detail"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                textAlign: "left",
+                padding: "10px 12px",
+                borderRadius: 12,
+                background: `${P.RED}14`,
+                border: `1.5px solid ${P.RED}`,
+                color: P.RED,
+                fontFamily: "inherit",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              <AlertTriangle size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>
+                {recallHits.length === 1
+                  ? "1 Rückruf betrifft möglicherweise ein Stammprodukt"
+                  : `${recallHits.length} Rückrufe betreffen möglicherweise Stammprodukte`}
+              </span>
+            </button>
+
+            {recallExpanded ? (
+              <div
+                id="recall-watch-detail"
+                style={{
+                  marginTop: 8,
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: `1px dashed ${P.RED}55`,
+                  background: P.PAPER,
+                }}
+              >
+                {recallHits.map((hit, i) => (
+                  <div
+                    key={`${hit.barcode}-${i}`}
+                    style={{
+                      paddingTop: i === 0 ? 0 : 10,
+                      marginTop: i === 0 ? 0 : 10,
+                      borderTop: i === 0 ? undefined : `1px dashed ${P.INK}1a`,
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{hit.name || "Unbekanntes Produkt"}</div>
+                    <div style={{ fontSize: 12.5, marginTop: 3, lineHeight: 1.35, opacity: 0.85 }}>
+                      {hit.match.title}
+                    </div>
+                    {hit.match.publishedDate ? (
+                      <Mono style={{ opacity: 0.6, marginTop: 3, display: "block" }}>
+                        gemeldet · {formatRecallDate(hit.match.publishedDate)}
+                      </Mono>
+                    ) : null}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 6, flexWrap: "wrap" }}>
+                      {hit.match.link ? (
+                        <a
+                          href={hit.match.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="tap"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 5,
+                            color: P.INK,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            textDecoration: "underline",
+                            textUnderlineOffset: 3,
+                          }}
+                        >
+                          Meldung öffnen
+                          <ExternalLink size={12} aria-hidden="true" />
+                        </a>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="tap hit44"
+                        onClick={() => onAcknowledgeRecall(hit.barcode, hit.match)}
+                        style={{
+                          background: "transparent",
+                          border: 0,
+                          color: P.DIM,
+                          fontFamily: "inherit",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          textDecoration: "underline",
+                          textUnderlineOffset: 3,
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        Geprüft, ausblenden
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* Pen-Ablaufwarnung (Zusatz): a plain text line — no card, no
+            border, no icon competing with the recall strip above — since
+            this only flags a printed expiry date, not an acute event, and
+            the app makes no medical claim either way. Absent entirely when
+            every pen is "ok"/"unknown" (no all-clear state).
+            Quiet, but NOT hidden: it used to sit at the very bottom next to
+            the Notfallplan button, i.e. below the fold. The whole point of
+            the reminder is that nobody checks the date printed on a pen
+            they hope never to use — putting it where you have to scroll for
+            it just swaps not-looking for not-scrolling. It stays visually
+            subordinate through type and color, not through distance. */}
+        {penWarning ? (
+          <button
+            type="button"
+            className="tap"
+            onClick={onOpenNotfall}
+            style={{
+              display: "block",
+              width: "100%",
+              textAlign: "left",
+              marginTop: 4,
+              marginBottom: 10,
+              background: "transparent",
+              border: 0,
+              padding: 0,
+              fontFamily: "inherit",
+              fontSize: 12,
+              fontWeight: 600,
+              color: penWarning.tone === "expired" ? P.RED : P.AMBER_TEXT,
+              cursor: "pointer",
+            }}
+          >
+            {penWarning.text}
+          </button>
+        ) : null}
+
         <SectionTitle>
           {loading ? "Suche Barcode…" : "Halte einen Code vor die Kamera."}
         </SectionTitle>
@@ -522,6 +760,7 @@ export default function ScanScreen({
             <Search size={15} aria-hidden="true" /> &nbsp;Suchen
           </button>
         </div>
+
 
         {/* Befund 04.3: Allergie-Karte and Notfallplan are two standalone
             screens, not a third input alternative — set apart from the row

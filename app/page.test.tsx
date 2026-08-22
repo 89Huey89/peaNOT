@@ -31,6 +31,33 @@ function jsonResponse(body: ProductResult) {
   return { json: async () => body, headers: new Headers() } as unknown as Response;
 }
 
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return (input as Request).url ?? String(input);
+}
+
+/**
+ * F5 (Rückruf-Wächter): components/useRecallWatch.ts fires its own
+ * POST /api/recalls once a favorite/history entry exists to watch — which,
+ * after the very first recorded scan below, is every test in this file.
+ * Routing by URL keeps that background poll from silently consuming a
+ * `mockResolvedValueOnce` meant for the next *product* lookup; it always
+ * gets a benign "nothing found" response so it never interferes with the
+ * ordinary lookup queue under test.
+ */
+function mockProductFetchQueue(...responses: ProductResult[]): void {
+  let i = 0;
+  vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+    if (requestUrl(input).includes("/api/recalls")) {
+      return { ok: true, json: async () => ({ status: "ok", results: {} }) } as unknown as Response;
+    }
+    const body = responses[Math.min(i, responses.length - 1)]!;
+    i++;
+    return jsonResponse(body);
+  });
+}
+
 // useHistoryOverlay (UX9) pops its own pushState entry via history.back()
 // whenever an overlay closes by any means other than the back gesture
 // itself (a button tap) — jsdom fires the resulting popstate asynchronously,
@@ -100,25 +127,22 @@ describe("Home result dialog", () => {
   });
 
   it("does not warn on a first scan, but warns when a later scan of the same barcode gets worse", async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(
-        jsonResponse({
-          barcode: "4011200296908",
-          productName: "Riegel",
-          brand: "ACME",
-          status: "NEIN",
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          barcode: "4011200296908",
-          productName: "Riegel",
-          brand: "ACME",
-          status: "JA",
-          found: "Erdnüsse",
-          ingredients: "Erdnüsse",
-        }),
-      );
+    mockProductFetchQueue(
+      {
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "NEIN",
+      },
+      {
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "JA",
+        found: "Erdnüsse",
+        ingredients: "Erdnüsse",
+      },
+    );
 
     render(<Home />);
 
