@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import HistoryScreen from "@/components/screens/HistoryScreen";
 import type { HistoryEntry } from "@/components/useHistory";
 import type { FavoriteEntry } from "@/lib/favorites";
@@ -133,6 +133,96 @@ describe("HistoryScreen favorite star (F2)", () => {
     fireEvent.click(screen.getByRole("button", { name: `„Reiswaffel“ zu Favoriten hinzufügen` }));
 
     expect(onRemove).not.toHaveBeenCalled();
+  });
+});
+
+describe("HistoryScreen share list (G)", () => {
+  const SECOND: HistoryEntry = {
+    id: "h_2_222",
+    ts: 1_700_100_000_000,
+    barcode: "222",
+    name: "Schokoriegel",
+    brand: "Ritter Sport",
+    verdict: "danger",
+  };
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "share");
+    Reflect.deleteProperty(navigator, "clipboard");
+    vi.restoreAllMocks();
+  });
+
+  it("offers a 'Liste teilen' button showing how many entries would be shared", () => {
+    renderScreen([ENTRY, SECOND]);
+
+    expect(screen.getByRole("button", { name: /Liste teilen \(2 Einträge\)/ })).toBeInTheDocument();
+  });
+
+  it("is absent when the (filtered) selection is empty, rather than sharing nothing", () => {
+    renderScreen([]);
+
+    expect(screen.queryByRole("button", { name: /Liste teilen/ })).not.toBeInTheDocument();
+  });
+
+  it("shares only the currently filtered selection, not the whole history", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    renderScreen([ENTRY, SECOND]);
+    // Narrow to just the "danger" filter chip — only SECOND should qualify.
+    fireEvent.click(screen.getByRole("button", { name: "Warnung" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /Liste teilen \(1 Eintrag\)/ }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    const text = (share.mock.calls[0]![0] as { text: string }).text;
+    expect(text).toContain("Schokoriegel");
+    expect(text).not.toContain("Reiswaffel");
+  });
+
+  it("calls navigator.share with the built list text", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    renderScreen([ENTRY, SECOND]);
+    fireEvent.click(screen.getByRole("button", { name: /Liste teilen/ }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    const text = (share.mock.calls[0]![0] as { text: string }).text;
+    expect(text).toContain("Reiswaffel");
+    expect(text).toContain("Schokoriegel");
+    expect(text).toContain("EAN 111");
+    expect(text).toContain("EAN 222");
+  });
+
+  it("falls back to the clipboard with a confirmation when Web Share is unavailable", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+
+    renderScreen([ENTRY]);
+    fireEvent.click(screen.getByRole("button", { name: /Liste teilen/ }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(writeText.mock.calls[0]![0]).toContain("Reiswaffel");
+    expect(await screen.findByText("In die Zwischenablage kopiert.")).toBeInTheDocument();
+  });
+
+  it("shows no error and no false confirmation when the user cancels the share sheet", async () => {
+    const share = vi.fn().mockImplementation(async () => {
+      const err = new Error("cancelled");
+      err.name = "AbortError";
+      throw err;
+    });
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+    const writeText = vi.fn();
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+
+    renderScreen([ENTRY]);
+    fireEvent.click(screen.getByRole("button", { name: /Liste teilen/ }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    expect(writeText).not.toHaveBeenCalled();
+    expect(screen.queryByText("In die Zwischenablage kopiert.")).not.toBeInTheDocument();
   });
 });
 

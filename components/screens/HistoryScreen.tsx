@@ -7,8 +7,9 @@ import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
 import type { FavoriteEntry } from "@/lib/favorites";
 import { readNote } from "@/lib/notes";
+import { buildShareListText } from "@/lib/share";
 import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { IdCard, Star, StickyNote, X } from "lucide-react";
+import { IdCard, Share, Star, StickyNote, X } from "lucide-react";
 
 const FILTERS: { label: string; verdict: Verdict | null }[] = [
   { label: "Alle", verdict: null },
@@ -101,9 +102,15 @@ export default function HistoryScreen({
   const [pendingUndo, setPendingUndo] = useState<HistoryEntry | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // G: brief "kopiert" confirmation for the clipboard fallback (no native
+  // share sheet available) — mirrors the result screen's shareNotice (F6).
+  const [shareNotice, setShareNotice] = useState(false);
+  const shareNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     return () => {
       if (undoTimer.current) clearTimeout(undoTimer.current);
+      if (shareNoticeTimer.current) clearTimeout(shareNoticeTimer.current);
     };
   }, []);
 
@@ -135,6 +142,58 @@ export default function HistoryScreen({
     });
   }, [history, filter, query]);
 
+  // G: "Liste teilen" shares exactly the currently filtered/searched
+  // selection (`shown`), not the whole history — the human already curated
+  // it by picking a filter chip and/or typing a search, so that visible set
+  // is the right thing to hand a shopping companion, not everything ever
+  // scanned.
+  const shareListText = useMemo(
+    () =>
+      buildShareListText(
+        shown.map((h) => ({
+          name: h.name,
+          brand: h.brand,
+          barcode: h.barcode,
+          label: VERDICT[h.verdict].label,
+          ts: h.ts,
+        })),
+      ),
+    [shown],
+  );
+
+  // Same two-step pattern as the result screen's "Teilen" (F6) and the
+  // profile export (F1): try the native share sheet first, fall back to the
+  // clipboard with a brief on-screen confirmation, and never surface an
+  // error for a share the user simply dismissed themselves.
+  async function handleShareList() {
+    if (!shareListText) return;
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      try {
+        await navigator.share({ text: shareListText });
+        return;
+      } catch (err) {
+        // AbortError: the user closed the share sheet themselves — leave it
+        // at that instead of surprising them with a clipboard fallback.
+        if (err instanceof Error && err.name === "AbortError") return;
+        // Any other failure falls through to the clipboard fallback below.
+      }
+    }
+    // Guard the call itself (not just try/catch it): navigator.clipboard?.
+    // writeText(...) would otherwise short-circuit to `undefined` when the
+    // API is missing, which resolves without throwing — that would show the
+    // "kopiert" confirmation even though nothing was actually copied.
+    if (typeof navigator !== "undefined" && typeof navigator.clipboard?.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(shareListText);
+        setShareNotice(true);
+        if (shareNoticeTimer.current) clearTimeout(shareNoticeTimer.current);
+        shareNoticeTimer.current = setTimeout(() => setShareNotice(false), 2500);
+      } catch {
+        /* clipboard write refused (e.g. permission) – nothing more we can do here */
+      }
+    }
+  }
+
   const stats = useMemo(() => {
     const weekAgo = Date.now() - 7 * 86_400_000;
     const recent = history.filter((h) => h.ts >= weekAgo);
@@ -157,6 +216,34 @@ export default function HistoryScreen({
               label="Allergie-Karte öffnen"
               onClick={onOpenCard}
             />
+            {shown.length > 0 ? (
+              // G: shares the visible (filtered/searched) selection, never
+              // the full history — see shareListText above. Rendered only
+              // when there's something to share, rather than a disabled
+              // state, matching how "Leeren" already handles "nothing to do
+              // here" for an empty history.
+              <button
+                type="button"
+                className="tap hit44"
+                onClick={handleShareList}
+                aria-label={`Liste teilen (${shown.length} ${shown.length === 1 ? "Eintrag" : "Einträge"})`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  background: "transparent",
+                  border: 0,
+                  color: P.DIM,
+                  fontFamily: "inherit",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: "6px 4px",
+                }}
+              >
+                <Share size={16} aria-hidden="true" />
+                <span aria-hidden="true">{shown.length}</span>
+              </button>
+            ) : null}
             {history.length > 0 ? (
               <button
                 type="button"
@@ -180,6 +267,29 @@ export default function HistoryScreen({
           </div>
         }
       />
+      {shareNotice ? (
+        <div
+          role="status"
+          style={{
+            position: "absolute",
+            left: 16,
+            right: 16,
+            top: "calc(54px + env(safe-area-inset-top))",
+            zIndex: 20,
+            padding: "10px 14px",
+            borderRadius: 12,
+            background: P.INK,
+            color: P.BG,
+            fontSize: 13,
+            fontWeight: 600,
+            textAlign: "center",
+            boxShadow: `0 12px 32px -14px ${P.INK}, 0 2px 8px ${P.INK}33`,
+          }}
+        >
+          In die Zwischenablage kopiert.
+        </div>
+      ) : null}
+
       <div style={{ padding: "4px 22px 0" }}>
         <SectionTitle>Verlauf</SectionTitle>
         <p style={{ margin: "0 0 10px", fontSize: 13.5, opacity: 0.7, lineHeight: 1.45 }}>
