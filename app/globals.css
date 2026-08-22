@@ -13,7 +13,15 @@ body {
   padding: 0;
   background: #e7dcc4;
   color: #16140f;
-  font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  /* --font-grotesk is set on <html> by app/layout.tsx (next/font/google,
+     self-hosted — see Befund 08); it resolves to "Space Grotesk", "Space
+     Grotesk Fallback", system-ui, ... — next/font keeps the literal family
+     name here (only `className` usage gets a hashed one), so the plain
+     "Space Grotesk" this line falls back to, and every hardcoded
+     `fontFamily: "'Space Grotesk', sans-serif"` elsewhere in components/*,
+     already matches the self-hosted @font-face next/font generates. Nothing
+     else needed to change for those to stop hitting Google at runtime. */
+  font-family: var(--font-grotesk), "Space Grotesk", system-ui, -apple-system, sans-serif;
   -webkit-text-size-adjust: 100%;
   min-height: 100dvh;
 }

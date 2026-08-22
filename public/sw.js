@@ -4,21 +4,20 @@
 // instead of a blank/error page. Everything else is cached at runtime.
 //
 // Two caches, so product photos and lookups can never evict the app shell:
-//  - SHELL_CACHE: same-origin navigations, /_next/static/ chunks, and the
-//    Google Fonts stylesheet + font files — unbounded, nothing here goes
-//    through putWithLimit.
+//  - SHELL_CACHE: same-origin navigations and /_next/static/ chunks —
+//    unbounded, nothing here goes through putWithLimit. Fraunces/Space
+//    Grotesk/JetBrains Mono are self-hosted via next/font/google (Befund 08)
+//    now, so their files live under /_next/static/ too and are covered by
+//    this same rule automatically — there's no separate font-origin case
+//    to special-case anymore (fonts.googleapis.com/fonts.gstatic.com are
+//    never requested at runtime at all).
 //  - DATA_CACHE: cross-origin product photos and same-origin API lookups —
 //    FIFO-capped so it can't grow without bound.
 
-const SW_VERSION = "v3";
+const SW_VERSION = "v4";
 const SHELL_CACHE = `peanot-shell-${SW_VERSION}`;
 const DATA_CACHE = `peanot-data-${SW_VERSION}`;
 const MAX_DATA_ENTRIES = 150;
-
-const FONT_ORIGINS = new Set([
-  "https://fonts.googleapis.com",
-  "https://fonts.gstatic.com",
-]);
 
 // Cap the data cache so it can't grow without bound (product photos and
 // lookups accumulate over time). Cache keys are returned in insertion order,
@@ -79,14 +78,9 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.origin !== self.location.origin) {
-    // Fonts belong with the app shell — losing them breaks legibility app-wide,
-    // not just one photo — so they're protected like the shell instead of
-    // sharing the evictable data cache with product photos.
-    if (FONT_ORIGINS.has(url.origin)) {
-      event.respondWith(cacheFirst(request, SHELL_CACHE, false));
-    } else {
-      event.respondWith(cacheFirst(request, DATA_CACHE, true));
-    }
+    // Cross-origin left is just product photos (Open Food Facts) now that
+    // fonts are self-hosted — FIFO-capped like everything else in DATA_CACHE.
+    event.respondWith(cacheFirst(request, DATA_CACHE, true));
     return;
   }
 
