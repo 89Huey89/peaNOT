@@ -532,6 +532,8 @@ export default function ResultScreen({
   sound,
   loading,
   isFavorite,
+  activePersonName,
+  personCount,
   onToggleFavorite,
   onBack,
   onScanAgain,
@@ -552,6 +554,13 @@ export default function ResultScreen({
   loading: boolean;
   /** F2: whether this barcode is currently starred as a staple. */
   isFavorite: boolean;
+  /** F (part 2): name of the person this verdict was just checked for. Only
+   * ever rendered/appended when `personCount > 1` — see that prop. */
+  activePersonName: string;
+  /** F (part 2): total number of people on this device (prefs.persons.length).
+   * At exactly one person this screen renders byte-for-byte like before this
+   * feature existed — no line, no share-text change, nothing new to notice. */
+  personCount: number;
   onToggleFavorite: () => void;
   onBack: () => void;
   onScanAgain: () => void;
@@ -649,11 +658,23 @@ export default function ResultScreen({
   // it — so ask, but only where the barcode itself leaves identity open.
   const identityOpen = hasIdentityCaveat(caveats);
   const mismatch = answer === "mismatch" && resolved.status === "KEINE_DATEN";
-  const detailText = mismatch
+  const rawDetailText = mismatch
     ? "Diese Angaben gehören zu einem anderen Produkt. Bitte die Zutatenliste auf deiner Verpackung lesen."
     : isUnknown
       ? result.message ?? copy.detail
       : copy.detail;
+
+  // F (part 2): once a second person exists, the verdict itself must say
+  // unambiguously *for whom* it was just checked, right next to it — a
+  // "Sicher" with no name attached is exactly the false all-clear this
+  // feature exists to prevent the moment there's someone else it could
+  // belong to instead. Prefixed onto the detail line (rendered immediately
+  // under the big verdict title, see data-verdict-card below) rather than
+  // tucked away lower on the screen. At exactly one person `personPrefix` is
+  // "" and every string below is byte-identical to before this feature.
+  const showPersonOnResult = personCount > 1;
+  const personPrefix = showPersonOnResult ? `Für ${activePersonName}: ` : "";
+  const detailText = `${personPrefix}${rawDetailText}`;
 
   // Branch the "no verdict" card by *why* (network/server failure vs. a real
   // not-found/no-data) — see unknownCardCopy for the reasoning.
@@ -666,9 +687,11 @@ export default function ResultScreen({
       : copy.headline;
 
   // F6: mirrors exactly what's already on screen — the verdict label plus
-  // its detail line, which for "partial" already carries the caveat wording
-  // and for a mismatch/network case already carries that correction — so a
-  // shared message can never read safer than the app itself says.
+  // its detail line (now with the "Für <Person>: " prefix folded in above
+  // when there's more than one person), which for "partial" already carries
+  // the caveat wording and for a mismatch/network case already carries that
+  // correction — so a shared message can never read safer, or less
+  // attributable, than the app itself says on screen.
   const shareText = buildShareText({
     productName: result.productName,
     brand: result.brand,
@@ -1266,7 +1289,13 @@ export default function ResultScreen({
                     color: isUnknown ? P.RED : undefined,
                   }}
                 >
-                  {detailText}
+                  {/* F (part 2): the "Für <Person>: " prefix is folded into
+                      `detailText` itself (see its own comment above) so the
+                      announcement/share text stay word-for-word identical to
+                      what's rendered here — `<strong>` is purely a visual
+                      emphasis on the same characters, not a second copy. */}
+                  {personPrefix ? <strong style={{ color: fg }}>{personPrefix}</strong> : null}
+                  {rawDetailText}
                   {strictTraceHit ? " Im Strikt-Modus wie ein Treffer behandelt." : ""}
                 </div>
               </div>

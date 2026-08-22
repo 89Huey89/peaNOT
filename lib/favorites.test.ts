@@ -183,3 +183,61 @@ describe("subscribeFavorites", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 });
+
+// F: Der Stern bleibt haushaltsweit, der Verdict daran merkt sich die Person.
+// Ohne diese Kopplung liest Anna Bens Nachprüfung als eigene Entwarnung.
+describe("favorites carry who checked them (F)", () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it("records the checking person alongside verdict and timestamp", () => {
+    toggleFavorite("4011200296908", {
+      name: "Keks",
+      brand: "ACME",
+      verdict: "safe",
+      ts: 1_000,
+    });
+
+    recordFavoriteCheck("4011200296908", "danger", 2_000, { id: "p2", name: "Ben" });
+
+    const [entry] = readAllFavorites();
+    expect(entry).toMatchObject({
+      verdict: "danger",
+      ts: 2_000,
+      personId: "p2",
+      personName: "Ben",
+    });
+  });
+
+  it("keeps the previous person when a recheck passes none", () => {
+    toggleFavorite("4011200296908", { name: "Keks", brand: "ACME", verdict: "safe", ts: 1_000 });
+    recordFavoriteCheck("4011200296908", "safe", 2_000, { id: "p1", name: "Anna" });
+
+    recordFavoriteCheck("4011200296908", "trace", 3_000);
+
+    const [entry] = readAllFavorites();
+    // Der Name bleibt stehen statt still zu verschwinden — eine Karte ohne
+    // Namen wäre wieder die mehrdeutige Anzeige, die das Feature abstellt.
+    expect(entry).toMatchObject({ verdict: "trace", personName: "Anna" });
+  });
+
+  it("never drops a pre-person favorite for lacking the new fields", () => {
+    // Genau der Fall beim Update: ein Stern aus der Zeit vor den Personen.
+    window.localStorage.setItem(
+      "peanot.favorites.v1",
+      JSON.stringify({
+        "4011200296908": {
+          barcode: "4011200296908",
+          name: "Keks",
+          brand: "ACME",
+          verdict: "safe",
+          ts: 1_000,
+          addedAt: 1_000,
+        },
+      }),
+    );
+
+    const entries = readAllFavorites();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.personId).toBeUndefined();
+  });
+});

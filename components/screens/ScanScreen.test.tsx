@@ -5,6 +5,9 @@ import ScanScreen from "@/components/screens/ScanScreen";
 import { palette } from "@/lib/theme";
 import { DEFAULT_EMERGENCY_PLAN, type EmergencyPlan } from "@/lib/emergency";
 import type { RecallWatchHit } from "@/lib/recalls/watch";
+import type { Person } from "@/lib/persons";
+
+const SINGLE_PERSON: Person[] = [{ id: "p1", name: "Ich", allergens: ["peanut"] }];
 
 // BarcodeScanner owns real camera access (@zxing/browser, getUserMedia) —
 // irrelevant to the bottom-sheet behavior under test here (UX8), so it's
@@ -60,12 +63,16 @@ function renderScreen(
     history?: HistoryEntryLike[];
     recallHits?: RecallWatchHit[];
     emergencyPlan?: EmergencyPlan;
+    persons?: Person[];
+    activePersonId?: string;
   } = {},
 ) {
   const onDetected = vi.fn();
   const onOpenFavorite = vi.fn();
   const onOpenNotfall = vi.fn();
   const onAcknowledgeRecall = vi.fn();
+  const onSwitchPerson = vi.fn();
+  const persons = opts.persons ?? SINGLE_PERSON;
   const { container } = render(
     <ScanScreen
       P={palette("mustard")}
@@ -76,6 +83,9 @@ function renderScreen(
       autoStartCamera={opts.autoStartCamera ?? false}
       history={opts.history ?? []}
       favorites={favorites}
+      persons={persons}
+      activePersonId={opts.activePersonId ?? persons[0]!.id}
+      onSwitchPerson={onSwitchPerson}
       recallHits={opts.recallHits ?? []}
       onAcknowledgeRecall={onAcknowledgeRecall}
       emergencyPlan={opts.emergencyPlan ?? DEFAULT_EMERGENCY_PLAN}
@@ -87,7 +97,7 @@ function renderScreen(
       onTab={vi.fn()}
     />,
   );
-  return { onDetected, onOpenFavorite, onOpenNotfall, onAcknowledgeRecall, container };
+  return { onDetected, onOpenFavorite, onOpenNotfall, onAcknowledgeRecall, onSwitchPerson, container };
 }
 
 async function openManual() {
@@ -517,5 +527,34 @@ describe("ScanScreen Pen-Ablaufwarnung (Zusatz)", () => {
     // The recall strip is a bordered button with a background tint; the pen
     // hint must not adopt that same treatment.
     expect(hint).toHaveStyle({ background: "transparent" });
+  });
+});
+
+describe("ScanScreen person switcher (F part 2)", () => {
+  const TWO_PERSONS: Person[] = [
+    { id: "p1", name: "Ich", allergens: ["peanut"] },
+    { id: "p2", name: "Ben", allergens: ["milk"] },
+  ];
+
+  it("renders nothing at all for a single-person household", () => {
+    renderScreen([], { persons: SINGLE_PERSON });
+
+    expect(screen.queryByRole("group", { name: "Person wählen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ben" })).not.toBeInTheDocument();
+  });
+
+  it("shows every person and marks the active one once a second exists", () => {
+    renderScreen([], { persons: TWO_PERSONS, activePersonId: "p1" });
+
+    expect(screen.getByRole("button", { name: "Ich" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Ben" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("switches the active person with a single tap, no trip through Profil", async () => {
+    const { onSwitchPerson } = renderScreen([], { persons: TWO_PERSONS, activePersonId: "p1" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Ben" }));
+
+    expect(onSwitchPerson).toHaveBeenCalledWith("p2");
   });
 });

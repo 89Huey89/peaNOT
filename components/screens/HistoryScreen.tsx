@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import { VERDICT, verdictColor, verdictGlyph, type Verdict } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
-import type { HistoryEntry } from "@/components/useHistory";
+import {
+  resolvedHistoryPersonId,
+  resolvedHistoryPersonName,
+  type HistoryEntry,
+} from "@/components/useHistory";
 import type { FavoriteEntry } from "@/lib/favorites";
+import type { Person } from "@/lib/persons";
 import { readNote } from "@/lib/notes";
 import { buildShareListText } from "@/lib/share";
 import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
@@ -72,6 +77,8 @@ export default function HistoryScreen({
   P,
   history,
   favorites,
+  persons,
+  activePersonId,
   onOpen,
   onClear,
   onRemove,
@@ -85,6 +92,13 @@ export default function HistoryScreen({
   /** Starred staples (F2) — only their barcodes matter here, to render the
    * star filled on the rows that are already favorited. */
   favorites: FavoriteEntry[];
+  /** F (part 2): everyone this device checks for (see lib/persons.ts) — used
+   * only to attribute each row (persons.length > 1) and to resolve a
+   * personId-less legacy row (persons[0], see resolvedHistoryPersonId). At
+   * exactly one person nothing here changes anything: see this file's
+   * "person attribution" section below. */
+  persons: Person[];
+  activePersonId: string;
   onOpen: (entry: HistoryEntry) => void;
   onClear: () => void;
   onRemove: (id: string) => void;
@@ -133,6 +147,29 @@ export default function HistoryScreen({
     [favorites],
   );
 
+  // F (part 2): person attribution. At exactly one person none of this
+  // changes anything visible — `showPerson` stays false, every row and the
+  // share button render exactly like before this feature existed, matching
+  // the requirement that the common single-person case stays untouched.
+  const showPerson = persons.length > 1;
+  const firstPerson = persons[0];
+  const activePerson = persons.find((p) => p.id === activePersonId) ?? firstPerson;
+  const activePersonName = activePerson?.name ?? "";
+
+  /** Who a given row belongs to, resolving a pre-existing entry with no
+   * personId at all to the household's original person — see
+   * resolvedHistoryPersonId's own comment in useHistory.ts.
+   * useCallback, damit die Memos unten von *dieser* Funktion abhängen können
+   * statt von einer nachgebauten Liste ihrer eingefangenen Werte — die würde
+   * bei jeder künftigen Änderung an ownerOf still auseinanderlaufen. */
+  const ownerOf = useCallback(
+    (entry: HistoryEntry): { id: string; name: string } => ({
+      id: resolvedHistoryPersonId(entry, firstPerson?.id ?? activePersonId),
+      name: resolvedHistoryPersonName(entry, firstPerson?.name ?? activePersonName),
+    }),
+    [firstPerson?.id, firstPerson?.name, activePersonId, activePersonName],
+  );
+
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return history.filter((h) => {
@@ -147,10 +184,26 @@ export default function HistoryScreen({
   // it by picking a filter chip and/or typing a search, so that visible set
   // is the right thing to hand a shopping companion, not everything ever
   // scanned.
+  //
+  // F (part 2): once a second person exists, `shown` can mix rows that were
+  // never checked for the person about to hand this list to someone else —
+  // buildShareListText (lib/share.ts, not owned by this feature) has no
+  // per-row person field at all, so a shared line reads as an unqualified
+  // all-clear exactly like it always did. Rather than silently sending a
+  // mixed list under one identity, "Liste teilen" narrows itself to the
+  // *active* person's own rows in that case — the same "for whoever is
+  // active right now" rule the rest of the app already applies everywhere
+  // else (see lib/persons.ts's module comment) — and the button below says
+  // so, rather than changing count with no explanation.
+  const shareable = useMemo(
+    () => (showPerson ? shown.filter((h) => ownerOf(h).id === activePersonId) : shown),
+    [shown, showPerson, activePersonId, ownerOf],
+  );
+
   const shareListText = useMemo(
     () =>
       buildShareListText(
-        shown.map((h) => ({
+        shareable.map((h) => ({
           name: h.name,
           brand: h.brand,
           barcode: h.barcode,
@@ -158,7 +211,7 @@ export default function HistoryScreen({
           ts: h.ts,
         })),
       ),
-    [shown],
+    [shareable],
   );
 
   // Same two-step pattern as the result screen's "Teilen" (F6) and the
@@ -216,17 +269,24 @@ export default function HistoryScreen({
               label="Allergie-Karte öffnen"
               onClick={onOpenCard}
             />
-            {shown.length > 0 ? (
+            {shareable.length > 0 ? (
               // G: shares the visible (filtered/searched) selection, never
               // the full history — see shareListText above. Rendered only
               // when there's something to share, rather than a disabled
               // state, matching how "Leeren" already handles "nothing to do
-              // here" for an empty history.
+              // here" for an empty history. F (part 2): once a second person
+              // exists, the count and the accessible name both reflect the
+              // narrower, active-person-only `shareable` set — see its own
+              // comment above for why the list is scoped down at all.
               <button
                 type="button"
                 className="tap hit44"
                 onClick={handleShareList}
-                aria-label={`Liste teilen (${shown.length} ${shown.length === 1 ? "Eintrag" : "Einträge"})`}
+                aria-label={
+                  showPerson
+                    ? `Liste teilen — nur ${activePersonName} (${shareable.length} ${shareable.length === 1 ? "Eintrag" : "Einträge"})`
+                    : `Liste teilen (${shareable.length} ${shareable.length === 1 ? "Eintrag" : "Einträge"})`
+                }
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -241,7 +301,7 @@ export default function HistoryScreen({
                 }}
               >
                 <Share size={16} aria-hidden="true" />
-                <span aria-hidden="true">{shown.length}</span>
+                <span aria-hidden="true">{shareable.length}</span>
               </button>
             ) : null}
             {history.length > 0 ? (
@@ -295,6 +355,14 @@ export default function HistoryScreen({
         <p style={{ margin: "0 0 10px", fontSize: 13.5, opacity: 0.7, lineHeight: 1.45 }}>
           Alle Scans auf diesem Gerät. Tippe für Details.
         </p>
+        {showPerson ? (
+          // F (part 2): the list below still mixes everyone's rows (see the
+          // per-row tag further down) — this line exists solely so "Liste
+          // teilen"'s narrower count never reads as a bug.
+          <p style={{ margin: "0 0 10px", fontSize: 12, opacity: 0.6, lineHeight: 1.4 }}>
+            „Liste teilen“ sendet nur die Einträge von {activePersonName}.
+          </p>
+        ) : null}
         {history.length > 0 ? (
           <input
             type="search"
@@ -342,6 +410,11 @@ export default function HistoryScreen({
             // handed to onOpen/onRemove/onRestore stays exactly the plain
             // HistoryEntry those callbacks (and peanot.history.v1) expect.
             const note = readNote(h.barcode);
+            // F (part 2): only computed for display — `h` itself is never
+            // touched, so onOpen/onRemove/onRestore still get back exactly
+            // the plain HistoryEntry they always did.
+            const owner = showPerson ? ownerOf(h) : null;
+            const ownedByOther = owner !== null && owner.id !== activePersonId;
             return (
               <div
                 key={h.id}
@@ -436,6 +509,38 @@ export default function HistoryScreen({
                     >
                       {VERDICT[h.verdict].label}
                     </div>
+                    {owner ? (
+                      // F (part 2): every row names the person once a second
+                      // one exists — silence would let a viewer read whatever
+                      // row happens to be on top as their own result. A row
+                      // that belongs to someone *other* than the person
+                      // currently active gets a quiet, bordered chip instead
+                      // of plain text — calm, not an alarm (this is normal,
+                      // expected data, not an error) but still visually
+                      // distinct enough that it can't be mistaken for the
+                      // active person's own "Sicher"/"Warnung" line above it.
+                      ownedByOther ? (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            marginTop: 3,
+                            padding: "2px 7px",
+                            borderRadius: 6,
+                            background: `${P.INK}0C`,
+                            border: `1px solid ${P.INK}22`,
+                            fontSize: "0.68em",
+                            fontWeight: 700,
+                            opacity: 0.85,
+                          }}
+                        >
+                          für {owner.name}
+                        </span>
+                      ) : (
+                        <Mono style={{ opacity: 0.55, display: "block", marginTop: 2 }}>
+                          {owner.name}
+                        </Mono>
+                      )
+                    ) : null}
                     {note ? (
                       <div
                         style={{

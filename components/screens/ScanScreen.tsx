@@ -10,6 +10,7 @@ import type { FavoriteEntry } from "@/lib/favorites";
 import { useOnlineStatus } from "@/components/useOnlineStatus";
 import type { RecallWatchHit } from "@/lib/recalls/watch";
 import type { RecallMatch } from "@/lib/types";
+import type { Person } from "@/lib/persons";
 import { getPenStatus, type EmergencyPlan } from "@/lib/emergency";
 import ManualEntry from "@/components/ManualEntry";
 import ProductSearch from "@/components/ProductSearch";
@@ -64,6 +65,9 @@ export default function ScanScreen({
   autoStartCamera,
   history,
   favorites,
+  persons,
+  activePersonId,
+  onSwitchPerson,
   recallHits,
   onAcknowledgeRecall,
   emergencyPlan,
@@ -85,6 +89,17 @@ export default function ScanScreen({
   history: HistoryEntry[];
   /** Starred staples (F2), most recently starred first. */
   favorites: FavoriteEntry[];
+  /** F (part 2): everyone this device checks for (see lib/persons.ts). The
+   * switcher below only renders once there's more than one — at exactly one
+   * person this screen is byte-for-byte the same as before this feature
+   * existed (see Befund 04's comments elsewhere in this file for why this
+   * screen stays this protective of its single-person default). */
+  persons: Person[];
+  activePersonId: string;
+  /** Switches who a scan checks against, without leaving this screen — the
+   * entire point of putting this here instead of only in ProfileScreen (see
+   * this feature's own task comment: "eben schnell für Ben prüfen"). */
+  onSwitchPerson: (id: string) => void;
   /** F5 (Rückruf-Wächter): unacknowledged recall notices against a watched
    * favorite/history product (components/useRecallWatch.ts). Warn-only,
    * same as the scan-time check: never changes a verdict, a history entry
@@ -321,6 +336,56 @@ export default function ScanScreen({
         className="scroll"
         style={{ flex: 1, overflowY: "auto", padding: "4px 22px 96px" }}
       >
+        {/* F (part 2): person switcher — only once a second person exists at
+            all (single-person households never render this, matching this
+            screen's existing "stay exactly as-is at one person" rule). Sits
+            above even the recall strip: "für wen prüfe ich gerade" has to be
+            answered before any of the content below it is read, since every
+            card/strip on this screen (Favoriten, zuletzt geprüft) implicitly
+            answers "for the active person". Switching here — not just from
+            ProfileScreen — is the entire point: checking a single staple for
+            Ben shouldn't require a trip through Profil and back. */}
+        {persons.length > 1 ? (
+          <div style={{ marginBottom: 14 }}>
+            <Mono style={{ opacity: 0.6, display: "block", marginBottom: 6 }}>prüfe für</Mono>
+            <div
+              className="scroll"
+              role="group"
+              aria-label="Person wählen"
+              style={{ display: "flex", gap: 8, overflowX: "auto" }}
+            >
+              {persons.map((p) => {
+                const active = p.id === activePersonId;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="tap hit44"
+                    aria-pressed={active}
+                    onClick={() => onSwitchPerson(p.id)}
+                    style={{
+                      flexShrink: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "9px 16px",
+                      borderRadius: 99,
+                      background: active ? P.INK : "transparent",
+                      color: active ? P.BG : P.INK,
+                      border: active ? 0 : `1.5px solid ${P.INK}33`,
+                      fontWeight: 700,
+                      fontSize: 13.5,
+                      fontFamily: "inherit",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
         {/* F5 (Rückruf-Wächter): ganz oben im Inhaltsbereich, oberhalb des
             Kamerakastens — a product that was clean at scan time and got an
             official recall notice since is exactly the case a green stamp
@@ -584,6 +649,27 @@ export default function ScanScreen({
                     >
                       {VERDICT[f.verdict].label}
                     </div>
+                    {/* F: Der Stern ist haushaltsweit, der Verdict daran nicht.
+                        Ab zwei Personen muss die Karte sagen, WESSEN letzte
+                        Prüfung sie zeigt — sonst liest man Bens Nachprüfung als
+                        eigene Entwarnung. Bei einer Person bleibt die Karte
+                        unverändert. Ein Eintrag ohne personName stammt aus der
+                        Zeit vor den Personen und gehört damit zur ersten
+                        Person, genau wie im Verlauf. */}
+                    {persons.length > 1 ? (
+                      <div
+                        style={{
+                          fontSize: "0.625em",
+                          color: P.DIM,
+                          marginTop: 3,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        geprüft für {f.personName ?? persons[0]?.name}
+                      </div>
+                    ) : null}
                   </button>
                 );
               })}

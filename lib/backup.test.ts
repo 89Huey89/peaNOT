@@ -12,6 +12,7 @@ import {
   mergeNotes,
   mergePackMatch,
   parseImportFile,
+  sanitizeHistory,
 } from "@/lib/backup";
 import { DEFAULT_PREFS } from "@/components/usePrefs";
 
@@ -79,6 +80,35 @@ describe("buildExportPayload", () => {
 
     expect(payload.prefs.persons).toEqual(prefs.persons);
     expect(payload.prefs.activePersonId).toBe("b");
+  });
+});
+
+describe("sanitizeHistory person fields (F part 2)", () => {
+  it("does not drop an entry that has no personId/personName at all", () => {
+    // This is exactly the shape of every history row written before F(part
+    // 2) existed. sanitizeHistory runs on ordinary load() too (see its own
+    // comment in lib/backup.ts), so rejecting this would delete a
+    // household's entire pre-existing history the moment this update lands.
+    const result = sanitizeHistory([entry({})]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty("personId");
+    expect(result[0]).not.toHaveProperty("personName");
+  });
+
+  it("passes personId/personName through when present", () => {
+    const result = sanitizeHistory([
+      { ...entry({}), personId: "p1", personName: "Ben" },
+    ]);
+    expect(result[0]).toMatchObject({ personId: "p1", personName: "Ben" });
+  });
+
+  it("ignores a non-string personId/personName instead of failing the whole row", () => {
+    const result = sanitizeHistory([
+      { ...entry({}), personId: 42, personName: null },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty("personId");
+    expect(result[0]).not.toHaveProperty("personName");
   });
 });
 

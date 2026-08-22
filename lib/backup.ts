@@ -204,13 +204,21 @@ function isVerdict(value: unknown): value is Verdict {
  * launch just because it once got written. This file's only import *from*
  * components/useHistory.ts is `import type { HistoryEntry }` above, which
  * TypeScript erases at compile time — so useHistory.ts importing a value
- * from here in return does not create a runtime import cycle. */
+ * from here in return does not create a runtime import cycle.
+ *
+ * F (part 2): `personId`/`personName` are validated *if present*, but are
+ * never required — an entry lacking them is still a well-formed row (it
+ * predates the feature; see HistoryEntry's own comment), never dropped for
+ * that reason alone. Rejecting a personId-less row here would delete a
+ * household's entire pre-existing history the moment this update lands,
+ * since sanitizeHistory also runs on ordinary load(), not just import. */
 export function sanitizeHistory(value: unknown): HistoryEntry[] {
   if (!Array.isArray(value)) return [];
   const out: HistoryEntry[] = [];
   for (const item of value) {
     if (item === null || typeof item !== "object") continue;
-    const { id, ts, barcode, name, brand, verdict } = item as Record<string, unknown>;
+    const { id, ts, barcode, name, brand, verdict, personId, personName } =
+      item as Record<string, unknown>;
     if (
       typeof id === "string" &&
       typeof ts === "number" &&
@@ -219,7 +227,10 @@ export function sanitizeHistory(value: unknown): HistoryEntry[] {
       typeof brand === "string" &&
       isVerdict(verdict)
     ) {
-      out.push({ id, ts, barcode, name, brand, verdict });
+      const entry: HistoryEntry = { id, ts, barcode, name, brand, verdict };
+      if (typeof personId === "string") entry.personId = personId;
+      if (typeof personName === "string") entry.personName = personName;
+      out.push(entry);
     }
   }
   return out;

@@ -25,6 +25,8 @@ function renderResult(
     tracesStrict?: boolean;
     isFavorite?: boolean;
     onToggleFavorite?: () => void;
+    activePersonName?: string;
+    personCount?: number;
   } = {},
 ) {
   render(
@@ -39,6 +41,10 @@ function renderResult(
       sound={false}
       loading={false}
       isFavorite={opts.isFavorite ?? false}
+      // F (part 2): single-person household by default — every existing
+      // test in this file exercises the unchanged, personCount === 1 case.
+      activePersonName={opts.activePersonName ?? "Ich"}
+      personCount={opts.personCount ?? 1}
       onToggleFavorite={opts.onToggleFavorite ?? (() => {})}
       onBack={() => {}}
       onScanAgain={() => {}}
@@ -384,6 +390,8 @@ describe("ResultScreen long product name (F10)", () => {
         sound={false}
         loading={false}
         isFavorite={false}
+        activePersonName="Ich"
+        personCount={1}
         onToggleFavorite={() => {}}
         onBack={() => {}}
         onScanAgain={() => {}}
@@ -411,6 +419,8 @@ describe("ResultScreen long product name (F10)", () => {
         sound={false}
         loading={false}
         isFavorite={false}
+        activePersonName="Ich"
+        personCount={1}
         onToggleFavorite={() => {}}
         onBack={() => {}}
         onScanAgain={() => {}}
@@ -1041,5 +1051,46 @@ describe("ResultScreen share (F6)", () => {
     const text = (share.mock.calls[0]![0] as ShareData).text as string;
     expect(text).toContain("Erdnuss enthalten");
     expect(text).not.toMatch(/\bsicher\b/i);
+  });
+});
+
+describe("ResultScreen person attribution (F part 2)", () => {
+  it("does not mention any person at all with a single-person household", () => {
+    renderResult(CLEAN_RESULT, null, { personCount: 1, activePersonName: "Ich" });
+
+    expect(screen.queryByText(/Für Ich:/)).not.toBeInTheDocument();
+  });
+
+  it("names the active person right next to the verdict once a second person exists", () => {
+    renderResult(CLEAN_RESULT, null, { personCount: 2, activePersonName: "Ben" });
+
+    // Present twice by design: once in the visible verdict card, once in the
+    // assertive aria-live announcement (same pattern other tests in this
+    // file use for text that is deliberately duplicated for screen readers).
+    expect(screen.getAllByText(/Für Ben:/).length).toBeGreaterThan(0);
+  });
+
+  it("carries the person's name into the shared text once a second person exists", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    renderResult(CLEAN_RESULT, null, { personCount: 2, activePersonName: "Ben" });
+    fireEvent.click(screen.getByRole("button", { name: "Ergebnis teilen" }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    const text = (share.mock.calls[0]![0] as ShareData).text as string;
+    expect(text).toContain("Für Ben:");
+  });
+
+  it("never puts a person's name into the shared text for a single-person household", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    renderResult(CLEAN_RESULT, null, { personCount: 1, activePersonName: "Ich" });
+    fireEvent.click(screen.getByRole("button", { name: "Ergebnis teilen" }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    const text = (share.mock.calls[0]![0] as ShareData).text as string;
+    expect(text).not.toContain("Für Ich:");
   });
 });

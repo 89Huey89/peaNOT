@@ -48,9 +48,14 @@ export function useFavorites() {
    * notifyFavoritesChanged() either) when the barcode isn't favorited, so
    * the subscription above only re-renders when this actually changed
    * something. */
-  const recordCheck = useCallback((barcode: string, verdict: Verdict, ts: number) => {
-    recordFavoriteCheck(barcode, verdict, ts);
-  }, []);
+  /** `person` hält fest, WESSEN Prüfung dieser Verdict war — siehe
+   * FavoriteEntry.personId in lib/favorites.ts für die Begründung. */
+  const recordCheck = useCallback(
+    (barcode: string, verdict: Verdict, ts: number, person?: { id: string; name: string }) => {
+      recordFavoriteCheck(barcode, verdict, ts, person);
+    },
+    [],
+  );
 
   return { favorites, ready, toggleFavorite, recordCheck };
 }

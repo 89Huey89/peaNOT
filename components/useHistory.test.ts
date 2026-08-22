@@ -1,9 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { useHistory } from "@/components/useHistory";
+import {
+  resolvedHistoryPersonId,
+  resolvedHistoryPersonName,
+  useHistory,
+  type HistoryEntry,
+} from "@/components/useHistory";
 import type { ProductResult } from "@/lib/types";
 
 const KEY = "peanot.history.v1";
+
+// Single-person household fixture used by every test that isn't explicitly
+// about a *second* person — `firstPersonId` always equals ICH.id here, the
+// same way it always would in app/page.tsx when prefs.persons has exactly
+// one entry (see that file's own comment on firstPersonId).
+const ICH = { id: "p1", name: "Ich" };
+const BEN = { id: "p2", name: "Ben" };
 
 function product(partial: Partial<ProductResult>): ProductResult {
   return {
@@ -34,18 +46,28 @@ describe("useHistory", () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.record(product({ status: "JA", productName: "Studentenfutter" })));
+    act(() =>
+      result.current.record(
+        product({ status: "JA", productName: "Studentenfutter" }),
+        ICH,
+        ICH.id,
+      ),
+    );
 
     expect(result.current.history).toHaveLength(1);
     expect(result.current.history[0]).toMatchObject({
       name: "Studentenfutter",
       brand: "dm Bio",
       verdict: "danger",
+      personId: ICH.id,
+      personName: ICH.name,
     });
 
     const stored = JSON.parse(window.localStorage.getItem(KEY)!);
     expect(stored).toHaveLength(1);
     expect(stored[0].verdict).toBe("danger");
+    expect(stored[0].personId).toBe(ICH.id);
+    expect(stored[0].personName).toBe(ICH.name);
   });
 
   it("hydrates existing history from localStorage on mount", async () => {
@@ -65,8 +87,8 @@ describe("useHistory", () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.record(product({ barcode: "111", productName: "A" })));
-    act(() => result.current.record(product({ barcode: "111", productName: "A" })));
+    act(() => result.current.record(product({ barcode: "111", productName: "A" }), ICH, ICH.id));
+    act(() => result.current.record(product({ barcode: "111", productName: "A" }), ICH, ICH.id));
 
     expect(result.current.history).toHaveLength(1);
   });
@@ -78,13 +100,17 @@ describe("useHistory", () => {
     // Five distinct products, as if checking a stack of familiar staples
     // before a shopping trip, then re-scanning the *first* of them last —
     // it is no longer adjacent to its own previous entry.
-    act(() => result.current.record(product({ barcode: "111", productName: "Erdnuss-Riegel" })));
-    act(() => result.current.record(product({ barcode: "222", productName: "B" })));
-    act(() => result.current.record(product({ barcode: "333", productName: "C" })));
-    act(() => result.current.record(product({ barcode: "444", productName: "D" })));
+    act(() =>
+      result.current.record(product({ barcode: "111", productName: "Erdnuss-Riegel" }), ICH, ICH.id),
+    );
+    act(() => result.current.record(product({ barcode: "222", productName: "B" }), ICH, ICH.id));
+    act(() => result.current.record(product({ barcode: "333", productName: "C" }), ICH, ICH.id));
+    act(() => result.current.record(product({ barcode: "444", productName: "D" }), ICH, ICH.id));
     act(() =>
       result.current.record(
         product({ barcode: "111", productName: "Erdnuss-Riegel", status: "JA" }),
+        ICH,
+        ICH.id,
       ),
     );
 
@@ -100,8 +126,8 @@ describe("useHistory", () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.record(product({ barcode: "111", productName: "First" })));
-    act(() => result.current.record(product({ barcode: "222", productName: "Second" })));
+    act(() => result.current.record(product({ barcode: "111", productName: "First" }), ICH, ICH.id));
+    act(() => result.current.record(product({ barcode: "222", productName: "Second" }), ICH, ICH.id));
 
     expect(result.current.history.map((h) => h.name)).toEqual(["Second", "First"]);
   });
@@ -111,7 +137,11 @@ describe("useHistory", () => {
     await waitFor(() => expect(result.current.ready).toBe(true));
 
     act(() =>
-      result.current.record(product({ productName: null, brand: null, status: "KEINE_DATEN" })),
+      result.current.record(
+        product({ productName: null, brand: null, status: "KEINE_DATEN" }),
+        ICH,
+        ICH.id,
+      ),
     );
 
     expect(result.current.history[0]).toMatchObject({
@@ -125,8 +155,8 @@ describe("useHistory", () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.record(product({ barcode: "111", productName: "First" })));
-    act(() => result.current.record(product({ barcode: "222", productName: "Second" })));
+    act(() => result.current.record(product({ barcode: "111", productName: "First" }), ICH, ICH.id));
+    act(() => result.current.record(product({ barcode: "222", productName: "Second" }), ICH, ICH.id));
 
     const removedId = result.current.history.find((h) => h.name === "First")!.id;
     act(() => result.current.remove(removedId));
@@ -140,7 +170,7 @@ describe("useHistory", () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.record(product({})));
+    act(() => result.current.record(product({}), ICH, ICH.id));
     act(() => result.current.clear());
 
     expect(result.current.history).toEqual([]);
@@ -151,8 +181,8 @@ describe("useHistory", () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.record(product({ barcode: "111", productName: "First" })));
-    act(() => result.current.record(product({ barcode: "222", productName: "Second" })));
+    act(() => result.current.record(product({ barcode: "111", productName: "First" }), ICH, ICH.id));
+    act(() => result.current.record(product({ barcode: "222", productName: "Second" }), ICH, ICH.id));
 
     const removed = result.current.history.find((h) => h.name === "First")!;
     act(() => result.current.remove(removed.id));
@@ -176,7 +206,7 @@ describe("useHistory", () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.record(product({ barcode: "111", productName: "Only" })));
+    act(() => result.current.record(product({ barcode: "111", productName: "Only" }), ICH, ICH.id));
     const entry = result.current.history[0]!;
 
     act(() => result.current.restore(entry));
@@ -188,7 +218,7 @@ describe("useHistory", () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.record(product({ barcode: "111", productName: "Alt" })));
+    act(() => result.current.record(product({ barcode: "111", productName: "Alt" }), ICH, ICH.id));
     const removed = result.current.history[0]!;
     act(() => result.current.remove(removed.id));
     expect(result.current.history).toEqual([]);
@@ -197,7 +227,11 @@ describe("useHistory", () => {
     // still showing (HistoryScreen keeps `removed` around for a few
     // seconds in its own state).
     act(() =>
-      result.current.record(product({ barcode: "111", productName: "Neu", status: "JA" })),
+      result.current.record(
+        product({ barcode: "111", productName: "Neu", status: "JA" }),
+        ICH,
+        ICH.id,
+      ),
     );
     expect(result.current.history).toHaveLength(1);
 
@@ -212,7 +246,7 @@ describe("useHistory", () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.record(product({ barcode: "111", productName: "Lokal" })));
+    act(() => result.current.record(product({ barcode: "111", productName: "Lokal" }), ICH, ICH.id));
     const local = result.current.history[0]!;
 
     act(() =>
@@ -231,13 +265,13 @@ describe("useHistory", () => {
     const { result } = renderHook(() => useHistory());
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    act(() => result.current.record(product({ barcode: "111", productName: "Lokal" })));
+    act(() => result.current.record(product({ barcode: "111", productName: "Lokal" }), ICH, ICH.id));
     const local = result.current.history[0]!;
 
-    // Different id and ts than the local entry — mergeHistory's id/barcode+ts
-    // key would treat this as a *distinct* row, even though it is the same
-    // barcode. The newer of the two (this one) must win, and only one "111"
-    // row must remain.
+    // Different id and ts than the local entry, and the *same* personId —
+    // mergeHistory's id/barcode+ts key would treat this as a *distinct* row,
+    // even though it is the same barcode for the same person. The newer of
+    // the two (this one) must win, and only one "111" row must remain.
     act(() =>
       result.current.importEntries([
         {
@@ -247,6 +281,8 @@ describe("useHistory", () => {
           name: "Importiert-Neuer",
           brand: "Z",
           verdict: "danger",
+          personId: ICH.id,
+          personName: ICH.name,
         },
       ]),
     );
@@ -321,7 +357,7 @@ describe("useHistory", () => {
 
     for (let i = 0; i < 205; i++) {
       act(() =>
-        result.current.record(product({ barcode: String(i), productName: `P${i}` })),
+        result.current.record(product({ barcode: String(i), productName: `P${i}` }), ICH, ICH.id),
       );
     }
 
@@ -332,5 +368,200 @@ describe("useHistory", () => {
 
     const stored = JSON.parse(window.localStorage.getItem(KEY)!);
     expect(stored).toHaveLength(200);
+  });
+});
+
+describe("useHistory person attribution (F part 2)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("stores who a scan was checked for", async () => {
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.record(product({ barcode: "111" }), BEN, ICH.id));
+
+    expect(result.current.history[0]).toMatchObject({ personId: BEN.id, personName: BEN.name });
+  });
+
+  it("a rescan for a DIFFERENT person adds a new row instead of overwriting the first person's row", async () => {
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() =>
+      result.current.record(
+        product({ barcode: "111", productName: "Erdnuss-Riegel", status: "NEIN" }),
+        ICH,
+        ICH.id,
+      ),
+    );
+    act(() =>
+      result.current.record(
+        product({ barcode: "111", productName: "Erdnuss-Riegel", status: "JA" }),
+        BEN,
+        ICH.id,
+      ),
+    );
+
+    const rows = result.current.history.filter((h) => h.barcode === "111");
+    expect(rows).toHaveLength(2);
+    expect(rows.find((h) => h.personId === ICH.id)).toMatchObject({ verdict: "safe" });
+    expect(rows.find((h) => h.personId === BEN.id)).toMatchObject({ verdict: "danger" });
+  });
+
+  it("a rescan for the SAME person still collapses to one row (dedup unaffected)", async () => {
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.record(product({ barcode: "111", status: "NEIN" }), BEN, ICH.id));
+    act(() => result.current.record(product({ barcode: "111", status: "JA" }), BEN, ICH.id));
+
+    const rows = result.current.history.filter((h) => h.barcode === "111");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ verdict: "danger", personId: BEN.id });
+  });
+
+  it("single-person household: a legacy row with no personId at all still gets replaced by a rescan, exactly like before this feature", async () => {
+    // Pre-existing history written before F(part2) shipped — no personId,
+    // and the household has (and always had) exactly one person, so
+    // firstPersonId === the active person's own id.
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify([
+        { id: "h1", ts: 1, barcode: "111", name: "Alt", brand: "X", verdict: "safe" },
+      ]),
+    );
+
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.history).toHaveLength(1));
+
+    act(() =>
+      result.current.record(
+        product({ barcode: "111", productName: "Neu", status: "JA" }),
+        ICH,
+        ICH.id, // firstPersonId === ICH.id: the only person there has ever been
+      ),
+    );
+
+    // Still one row — the legacy row was replaced, not left as a stray
+    // duplicate, matching the pre-F(part2) barcode-only dedup exactly.
+    expect(result.current.history).toHaveLength(1);
+    expect(result.current.history[0]).toMatchObject({
+      name: "Neu",
+      verdict: "danger",
+      personId: ICH.id,
+    });
+  });
+
+  it("multi-person household: a legacy row is NOT overwritten by a different person's rescan", async () => {
+    // The legacy row here is attributed to `firstPersonId` (ICH.id) by
+    // convention — Ben rescanning the same barcode must add his own row,
+    // never silently claim/replace a row that isn't provably his.
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify([
+        { id: "h1", ts: 1, barcode: "111", name: "Alt", brand: "X", verdict: "safe" },
+      ]),
+    );
+
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.history).toHaveLength(1));
+
+    act(() =>
+      result.current.record(
+        product({ barcode: "111", productName: "Neu", status: "JA" }),
+        BEN,
+        ICH.id, // firstPersonId is ICH, not Ben
+      ),
+    );
+
+    const rows = result.current.history.filter((h) => h.barcode === "111");
+    expect(rows).toHaveLength(2);
+    expect(rows.some((h) => h.personId === undefined && h.name === "Alt")).toBe(true);
+    expect(rows.some((h) => h.personId === BEN.id && h.name === "Neu")).toBe(true);
+  });
+
+  it("does not lose old history entries that predate person attribution", async () => {
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify([
+        { id: "h1", ts: 2, barcode: "111", name: "Alt 1", brand: "X", verdict: "safe" },
+        { id: "h2", ts: 1, barcode: "222", name: "Alt 2", brand: "Y", verdict: "danger" },
+      ]),
+    );
+
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    expect(result.current.history).toHaveLength(2);
+    expect(result.current.history.map((h) => h.name)).toEqual(["Alt 1", "Alt 2"]);
+    expect(result.current.history.every((h) => h.personId === undefined)).toBe(true);
+  });
+
+  it("the 200-entry cap still applies once entries carry a person", async () => {
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    for (let i = 0; i < 205; i++) {
+      act(() =>
+        result.current.record(product({ barcode: String(i), productName: `P${i}` }), ICH, ICH.id),
+      );
+    }
+
+    expect(result.current.history).toHaveLength(200);
+    expect(result.current.history[0]).toMatchObject({ name: "P204", personId: ICH.id });
+  });
+
+  it("restore() re-inserts an entry without conflating it with a different person's row for the same barcode", async () => {
+    const { result } = renderHook(() => useHistory());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.record(product({ barcode: "111" }), ICH, ICH.id));
+    const ichRow = result.current.history[0]!;
+    act(() => result.current.remove(ichRow.id));
+    act(() => result.current.record(product({ barcode: "111" }), BEN, ICH.id));
+
+    act(() => result.current.restore(ichRow));
+
+    const rows = result.current.history.filter((h) => h.barcode === "111");
+    expect(rows).toHaveLength(2);
+    expect(rows.some((h) => h.personId === ICH.id)).toBe(true);
+    expect(rows.some((h) => h.personId === BEN.id)).toBe(true);
+  });
+});
+
+describe("resolvedHistoryPersonId / resolvedHistoryPersonName", () => {
+  const modern: HistoryEntry = {
+    id: "h1",
+    ts: 1,
+    barcode: "111",
+    name: "X",
+    brand: "Y",
+    verdict: "safe",
+    personId: BEN.id,
+    personName: BEN.name,
+  };
+  const legacy: HistoryEntry = {
+    id: "h2",
+    ts: 1,
+    barcode: "222",
+    name: "X",
+    brand: "Y",
+    verdict: "safe",
+  };
+
+  it("resolves a modern entry to its own stored person, ignoring the fallback", () => {
+    expect(resolvedHistoryPersonId(modern, ICH.id)).toBe(BEN.id);
+    expect(resolvedHistoryPersonName(modern, ICH.name)).toBe(BEN.name);
+  });
+
+  it("resolves a legacy (personId-less) entry to the given fallback", () => {
+    expect(resolvedHistoryPersonId(legacy, ICH.id)).toBe(ICH.id);
+    expect(resolvedHistoryPersonName(legacy, ICH.name)).toBe(ICH.name);
   });
 });

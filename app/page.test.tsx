@@ -13,6 +13,7 @@ vi.mock("@/components/screens/ScanScreen", () => ({
   default: (props: {
     onDetected: (barcode: string) => void;
     onTab: (t: "scan" | "verlauf" | "profil") => void;
+    onSwitchPerson: (id: string) => void;
   }) => (
     <div data-testid="scan-screen-stub">
       <button type="button" onClick={() => props.onDetected("4011200296908")}>
@@ -20,6 +21,14 @@ vi.mock("@/components/screens/ScanScreen", () => ({
       </button>
       <button type="button" onClick={() => props.onTab("verlauf")}>
         goto verlauf
+      </button>
+      {/* F (part 2): the real switcher only renders once persons.length > 1
+          (see ScanScreen.test.tsx for that behavior); this stub always
+          exposes the callback so page.tsx's own reaction to a switch —
+          closing a stale result — can be tested independent of the
+          switcher's own visibility rule. */}
+      <button type="button" onClick={() => props.onSwitchPerson("some-other-person")}>
+        simulate switch person
       </button>
     </div>
   ),
@@ -168,6 +177,58 @@ describe("Home result dialog", () => {
     // Informational only: the worsening note is not the only thing that
     // changed — the verdict itself (a real hit) still drives the alarm below.
     expect(screen.getByText("Erdnuss enthalten.")).toBeInTheDocument();
+  });
+});
+
+describe("Home person switch closes a stale result (F part 2)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    __clearProductLookupCache();
+  });
+
+  it("closes an open result rather than leaving a stale verdict up after a person switch", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "NEIN",
+      }),
+    );
+
+    render(<Home />);
+    await userEvent.click(await screen.findByText("simulate detect"));
+    await screen.findByRole("dialog");
+
+    await userEvent.click(screen.getByText("simulate switch person"));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("scan-screen-stub")).toBeInTheDocument();
+  });
+
+  it("does nothing surprising when switching person with no result open", async () => {
+    render(<Home />);
+    await screen.findByText("simulate detect");
+
+    await userEvent.click(screen.getByText("simulate switch person"));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("scan-screen-stub")).toBeInTheDocument();
   });
 });
 

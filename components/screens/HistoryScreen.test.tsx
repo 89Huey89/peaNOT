@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import HistoryScreen from "@/components/screens/HistoryScreen";
 import type { HistoryEntry } from "@/components/useHistory";
 import type { FavoriteEntry } from "@/lib/favorites";
+import type { Person } from "@/lib/persons";
 import { palette } from "@/lib/theme";
 
 const ENTRY: HistoryEntry = {
@@ -14,16 +15,25 @@ const ENTRY: HistoryEntry = {
   verdict: "safe",
 };
 
-function renderScreen(history: HistoryEntry[] = [ENTRY], favorites: FavoriteEntry[] = []) {
+const SINGLE_PERSON: Person[] = [{ id: "p1", name: "Ich", allergens: ["peanut"] }];
+
+function renderScreen(
+  history: HistoryEntry[] = [ENTRY],
+  favorites: FavoriteEntry[] = [],
+  opts: { persons?: Person[]; activePersonId?: string } = {},
+) {
   const onRemove = vi.fn();
   const onRestore = vi.fn();
   const onOpenCard = vi.fn();
   const onToggleFavorite = vi.fn();
+  const persons = opts.persons ?? SINGLE_PERSON;
   render(
     <HistoryScreen
       P={palette("mustard")}
       history={history}
       favorites={favorites}
+      persons={persons}
+      activePersonId={opts.activePersonId ?? persons[0]!.id}
       onOpen={() => {}}
       onClear={() => {}}
       onRemove={onRemove}
@@ -246,5 +256,105 @@ describe("HistoryScreen note preview (F5)", () => {
     renderScreen();
 
     expect(screen.queryByText(/Sorte Schoko/)).not.toBeInTheDocument();
+  });
+});
+
+describe("HistoryScreen person attribution (F part 2)", () => {
+  const TWO_PERSONS: Person[] = [
+    { id: "p1", name: "Ich", allergens: ["peanut"] },
+    { id: "p2", name: "Ben", allergens: ["milk"] },
+  ];
+
+  const ICH_ENTRY: HistoryEntry = {
+    id: "h_1_111",
+    ts: 1_700_000_000_000,
+    barcode: "111",
+    name: "Reiswaffel",
+    brand: "dm Bio",
+    verdict: "safe",
+    personId: "p1",
+    personName: "Ich",
+  };
+  const BEN_ENTRY: HistoryEntry = {
+    id: "h_2_222",
+    ts: 1_700_100_000_000,
+    barcode: "222",
+    name: "Schokoriegel",
+    brand: "Ritter Sport",
+    verdict: "danger",
+    personId: "p2",
+    personName: "Ben",
+  };
+  // Predates this feature entirely — no personId/personName at all.
+  const LEGACY_ENTRY: HistoryEntry = {
+    id: "h_3_333",
+    ts: 1_699_000_000_000,
+    barcode: "333",
+    name: "Alt-Produkt",
+    brand: "X",
+    verdict: "safe",
+  };
+
+  it("single-person household: shows no person tag on any row", () => {
+    renderScreen([ICH_ENTRY], [], { persons: SINGLE_PERSON, activePersonId: "p1" });
+
+    expect(screen.queryByText("Ich")).not.toBeInTheDocument();
+    expect(screen.queryByText("für Ich")).not.toBeInTheDocument();
+    expect(screen.queryByText("für Ben")).not.toBeInTheDocument();
+  });
+
+  it("names the active person's own row once a second person exists", () => {
+    renderScreen([ICH_ENTRY], [], { persons: TWO_PERSONS, activePersonId: "p1" });
+
+    expect(screen.getByText("Ich")).toBeInTheDocument();
+  });
+
+  it("marks a row belonging to someone else with a distinct, calm tag", () => {
+    renderScreen([ICH_ENTRY, BEN_ENTRY], [], { persons: TWO_PERSONS, activePersonId: "p1" });
+
+    // Ben's row is tagged distinctly ("für Ben"); the active person's own
+    // row is not wrapped the same way.
+    expect(screen.getByText("für Ben")).toBeInTheDocument();
+  });
+
+  it("attributes a legacy (personId-less) row to the household's original person", () => {
+    renderScreen([LEGACY_ENTRY], [], { persons: TWO_PERSONS, activePersonId: "p1" });
+
+    // firstPerson is p1 ("Ich") — the legacy row reads as belonging to Ich,
+    // the active person here, so it gets the quiet (not "für X") treatment.
+    expect(screen.getByText("Ich")).toBeInTheDocument();
+    expect(screen.queryByText("für Ich")).not.toBeInTheDocument();
+  });
+
+  it("a legacy row reads as belonging to someone else once a different person is active", () => {
+    renderScreen([LEGACY_ENTRY], [], { persons: TWO_PERSONS, activePersonId: "p2" });
+
+    expect(screen.getByText("für Ich")).toBeInTheDocument();
+  });
+
+  it("'Liste teilen' scopes to only the active person's rows once a second person exists", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    renderScreen([ICH_ENTRY, BEN_ENTRY], [], { persons: TWO_PERSONS, activePersonId: "p1" });
+
+    const button = screen.getByRole("button", { name: /Liste teilen — nur Ich \(1 Eintrag\)/ });
+    fireEvent.click(button);
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    const text = (share.mock.calls[0]![0] as { text: string }).text;
+    expect(text).toContain("Reiswaffel");
+    expect(text).not.toContain("Schokoriegel");
+  });
+
+  it("explains the narrower 'Liste teilen' scope in a visible line", () => {
+    renderScreen([ICH_ENTRY, BEN_ENTRY], [], { persons: TWO_PERSONS, activePersonId: "p1" });
+
+    expect(screen.getByText(/sendet nur die Einträge von Ich/)).toBeInTheDocument();
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "share");
+    vi.restoreAllMocks();
   });
 });
