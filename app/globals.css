@@ -241,6 +241,14 @@ body {
   display: block;
   width: 100%;
   aspect-ratio: 1 / 1.05;
+  /* Der Kasten behält seine Form, darf aber nicht den halben Bildschirm
+     fressen: bei 1/1.05 blieb auf einem 390x844-iPhone unter "Kamera
+     starten" nichts mehr übrig, sodass die Favoriten-Leiste — der
+     häufigste Alltagsfall, der Vor-dem-Einkauf-Check der Stammprodukte —
+     selbst nach dem Vorziehen noch angeschnitten war. Ein Barcode ist
+     breit und flach; die Höhe war ohnehin Reserve. object-fit: cover
+     schneidet oben und unten weg, nicht in der Mitte, wo der Code liegt. */
+  max-height: 38dvh;
   background: #0c0c0d;
   object-fit: cover;
 }

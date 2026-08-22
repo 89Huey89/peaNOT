@@ -1,17 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Palette } from "@/lib/theme";
-import { verdictColor } from "@/lib/verdict";
-import { VERDICT } from "@/lib/verdict";
+import { verdictColor, verdictGlyph, VERDICT, type Verdict } from "@/lib/verdict";
 import { formatRelative } from "@/lib/time";
 import type { HistoryEntry } from "@/components/useHistory";
 import type { FavoriteEntry } from "@/lib/favorites";
 import { useOnlineStatus } from "@/components/useOnlineStatus";
 import ManualEntry from "@/components/ManualEntry";
 import ProductSearch from "@/components/ProductSearch";
-import { verdictGlyph } from "@/lib/verdict";
 import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
 import { IdCard, Keyboard, Languages, Search, Siren, Star, X } from "lucide-react";
 
@@ -21,6 +19,14 @@ const BarcodeScanner = dynamic(() => import("@/components/BarcodeScanner"), {
 });
 
 type EntrySheet = "manual" | "search" | null;
+
+// Befund 11: the sheet was capped at a flat 45dvh so the iOS keyboard could
+// never cover its results — safe, but it also left the cap in place on
+// devices/orientations where the keyboard takes far less than 55% of the
+// screen, showing barely two search results. This is only the fallback for
+// environments without `visualViewport` (jsdom in tests, and any browser
+// that lacks it) — see the effect below for the real, measured height.
+const FALLBACK_SHEET_MAX_HEIGHT = "45dvh";
 
 export default function ScanScreen({
   P,
@@ -69,17 +75,44 @@ export default function ScanScreen({
   // grabs focus during the same commit (too early for an effect here to
   // still see it on document.activeElement).
   const openerRef = useRef<HTMLElement | null>(null);
+  const [sheetMaxHeight, setSheetMaxHeight] = useState<string>(FALLBACK_SHEET_MAX_HEIGHT);
 
   function toggleSheet(kind: "manual" | "search") {
     openerRef.current = document.activeElement as HTMLElement | null;
     setSheet((s) => (s === kind ? null : kind));
   }
 
+  // Befund 05: forward to the ordinary lookup flow, but also close the sheet
+  // right away instead of leaving it sitting open behind the result. Closing
+  // unmounts ManualEntry/ProductSearch entirely (see the sheet's conditional
+  // render below), which is also what "clears the field" — there's no stale
+  // barcode/query left to clear because the next open is a fresh mount.
+  function handleManualSubmit(barcode: string) {
+    setSheet(null);
+    onDetected(barcode);
+  }
+  function handleSearchSelect(barcode: string) {
+    setSheet(null);
+    onDetected(barcode);
+  }
+
   // Restore focus to whatever opened the sheet once it closes, by any means
-  // (Schließen, scrim tap, Escape) — mirrors ResultScreen's/PhraseScreen's
-  // dialog pattern. Reads openerRef fresh in the cleanup (not up front) so
-  // switching manual<->search without closing still restores to the most
-  // recent opener, not a stale one from the first open.
+  // (Schließen, scrim tap, Escape, or now a successful submit/selection above)
+  // — mirrors ResultScreen's/PhraseScreen's dialog pattern. Reads openerRef
+  // fresh in the cleanup (not up front) so switching manual<->search without
+  // closing still restores to the most recent opener, not a stale one from
+  // the first open.
+  //
+  // Kept for the submit/select path too, deliberately: `loading` becomes
+  // true right away but the result overlay only mounts once the lookup's
+  // network round-trip resolves, so there's a real (if short) gap where this
+  // screen — sheet now closed — is what's actually on screen and
+  // interactive. Landing focus on the button that opened the sheet keeps it
+  // somewhere sane for that gap instead of dropping it to <body>, and costs
+  // nothing extra: it's the same cleanup Escape/scrim/✕ already use. Once
+  // the result dialog does mount, app/page.tsx marks this screen `inert` and
+  // the dialog manages its own focus (the established pattern elsewhere in
+  // this app), so this placement is superseded rather than fought over.
   useEffect(() => {
     if (!sheetOpen) return;
     return () => {
@@ -99,6 +132,55 @@ export default function ScanScreen({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [sheetOpen]);
+
+  // Befund 11: replace the flat 45dvh cap with the real space available above
+  // the keyboard, tracked via visualViewport while the sheet is open.
+  // visualViewport.height already excludes the iOS keyboard, and offsetTop
+  // covers the (rarer) case where the visible viewport itself has scrolled
+  // down from the layout viewport's top. jsdom (and any browser without
+  // visualViewport) has nothing to observe, so it just keeps the old static
+  // cap — never throws, never leaves the sheet unbounded.
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) {
+      setSheetMaxHeight(FALLBACK_SHEET_MAX_HEIGHT);
+      return;
+    }
+    // Mirrors the sheet's own `marginTop` base offset and leaves a small gap
+    // at the bottom so the card never touches the visible viewport's edge.
+    const TOP_OFFSET = 10;
+    const BOTTOM_GAP = 12;
+    const update = () => {
+      const available = vv.height + vv.offsetTop - TOP_OFFSET - BOTTOM_GAP;
+      setSheetMaxHeight(`${Math.max(200, Math.round(available))}px`);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, [sheetOpen]);
+
+  // Befund 11: barcode -> the freshest verdict already known from favorites
+  // or history, so ProductSearch can mark a familiar result instead of every
+  // near-duplicate needing to be opened just to tell them apart. Recomputed
+  // only when either list actually changes; picks whichever of the two
+  // records is newer rather than preferring one source, since both are kept
+  // fresh by the same recheck (recordFavoriteCheck / history.record both run
+  // from the same lookup in app/page.tsx).
+  const knownVerdicts = useMemo(() => {
+    const map = new Map<string, { verdict: Verdict; ts: number }>();
+    const consider = (barcode: string, verdict: Verdict, ts: number) => {
+      const existing = map.get(barcode);
+      if (!existing || ts > existing.ts) map.set(barcode, { verdict, ts });
+    };
+    for (const h of history) consider(h.barcode, h.verdict, h.ts);
+    for (const f of favorites) consider(f.barcode, f.verdict, f.ts);
+    return map;
+  }, [history, favorites]);
 
   return (
     <AppShell P={P}>
@@ -169,95 +251,12 @@ export default function ScanScreen({
           autoStart={autoStartCamera}
         />
 
-        <button
-          type="button"
-          className="tap"
-          onClick={() => toggleSheet("manual")}
-          aria-expanded={sheet === "manual"}
-          aria-controls="manual-entry-panel"
-          style={{
-            width: "100%",
-            marginTop: 10,
-            background: "transparent",
-            color: P.INK,
-            border: `1.5px solid ${P.INK}33`,
-            borderRadius: 99,
-            padding: "11px 14px",
-            fontWeight: 600,
-            fontSize: 13.5,
-            fontFamily: "inherit",
-          }}
-        >
-          <Keyboard size={15} aria-hidden="true" /> &nbsp;Barcode manuell eingeben
-        </button>
-
-        <button
-          type="button"
-          className="tap"
-          onClick={() => toggleSheet("search")}
-          aria-expanded={sheet === "search"}
-          aria-controls="product-search-panel"
-          style={{
-            width: "100%",
-            marginTop: 10,
-            background: "transparent",
-            color: P.INK,
-            border: `1.5px solid ${P.INK}33`,
-            borderRadius: 99,
-            padding: "11px 14px",
-            fontWeight: 600,
-            fontSize: 13.5,
-            fontFamily: "inherit",
-          }}
-        >
-          <Search size={15} aria-hidden="true" /> &nbsp;Nach Name suchen
-        </button>
-
-        <button
-          type="button"
-          className="tap"
-          onClick={onOpenCard}
-          style={{
-            width: "100%",
-            marginTop: 10,
-            background: "transparent",
-            color: P.INK,
-            border: `1.5px solid ${P.INK}33`,
-            borderRadius: 99,
-            padding: "11px 14px",
-            fontWeight: 600,
-            fontSize: 13.5,
-            fontFamily: "inherit",
-          }}
-        >
-          <Languages size={15} aria-hidden="true" /> &nbsp;Allergie-Karte zeigen
-        </button>
-
-        {/* F4: same neighbor pill as "Allergie-Karte zeigen" above, tinted
-            red so it stays findable if someone unfamiliar with the app (a
-            babysitter, a grandparent) has to find it under stress. */}
-        <button
-          type="button"
-          className="tap"
-          onClick={onOpenNotfall}
-          style={{
-            width: "100%",
-            marginTop: 10,
-            background: "transparent",
-            color: P.RED,
-            border: `1.5px solid ${P.RED}55`,
-            borderRadius: 99,
-            padding: "11px 14px",
-            fontWeight: 600,
-            fontSize: 13.5,
-            fontFamily: "inherit",
-          }}
-        >
-          <Siren size={15} aria-hidden="true" /> &nbsp;Notfallplan
-        </button>
-
+        {/* Befund 04.1: Favoriten moved up to right under the camera —
+            rechecking the same 10-20 staples before a shop is the most
+            common reason to open this screen at all, so it shouldn't sit
+            below four buttons' worth of scrolling to reach. */}
         {favorites.length > 0 ? (
-          <div style={{ marginTop: 22 }}>
+          <div style={{ marginTop: 18 }}>
             <Mono style={{ opacity: 0.6, display: "block", marginBottom: 8 }}>favoriten</Mono>
             <div
               className="scroll"
@@ -298,7 +297,18 @@ export default function ScanScreen({
                       color={P.ACCENT}
                       style={{ position: "absolute", top: 8, right: 8 }}
                     />
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {/* Der Stern sitzt absolut oben rechts; ohne diese
+                        Reserve läuft die Zeitangabe darunter durch
+                        ("GESTERN · 07:13" mit Stern auf der 3). Der
+                        Produktname darunter hält denselben Abstand. */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        paddingRight: 16,
+                      }}
+                    >
                       <span
                         aria-hidden="true"
                         style={{
@@ -452,6 +462,131 @@ export default function ScanScreen({
             </div>
           </div>
         ) : null}
+
+        {/* Befund 04.2: manual entry and name search are two ways to reach the
+            same goal — checking a barcode you can't or don't want to point
+            the camera at — so they share one row instead of two full-width
+            pills that read as separate, unrelated actions. Visible labels
+            are short ("Manuell"/"Suchen"); the fuller aria-label keeps the
+            accessible name (and this file's existing tests) unchanged. */}
+        <div style={{ display: "flex", gap: 8, marginTop: 22 }}>
+          <button
+            type="button"
+            className="tap"
+            onClick={() => toggleSheet("manual")}
+            aria-expanded={sheet === "manual"}
+            aria-controls="manual-entry-panel"
+            aria-label="Barcode manuell eingeben"
+            style={{
+              flex: 1,
+              minHeight: 44,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "transparent",
+              color: P.INK,
+              border: `1.5px solid ${P.INK}33`,
+              borderRadius: 99,
+              padding: "11px 10px",
+              fontWeight: 600,
+              fontSize: 13.5,
+              fontFamily: "inherit",
+            }}
+          >
+            <Keyboard size={15} aria-hidden="true" /> &nbsp;Manuell
+          </button>
+
+          <button
+            type="button"
+            className="tap"
+            onClick={() => toggleSheet("search")}
+            aria-expanded={sheet === "search"}
+            aria-controls="product-search-panel"
+            aria-label="Nach Name suchen"
+            style={{
+              flex: 1,
+              minHeight: 44,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "transparent",
+              color: P.INK,
+              border: `1.5px solid ${P.INK}33`,
+              borderRadius: 99,
+              padding: "11px 10px",
+              fontWeight: 600,
+              fontSize: 13.5,
+              fontFamily: "inherit",
+            }}
+          >
+            <Search size={15} aria-hidden="true" /> &nbsp;Suchen
+          </button>
+        </div>
+
+        {/* Befund 04.3: Allergie-Karte and Notfallplan are two standalone
+            screens, not a third input alternative — set apart from the row
+            above by a divider and quieter styling (smaller, DIM-toned
+            "Allergie-Karte") so the pair reads as "elsewhere in the app"
+            rather than more of the same kind of action. Notfallplan keeps a
+            filled red tint regardless of that quieter treatment: it has to
+            be findable by someone who's never seen this app before — a
+            grandparent, a babysitter — searching under stress, so it can't
+            fade into a muted "more" section the way Allergie-Karte can. */}
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginTop: 26,
+            paddingTop: 18,
+            borderTop: `1px solid ${P.INK}1a`,
+          }}
+        >
+          <button
+            type="button"
+            className="tap"
+            onClick={onOpenCard}
+            style={{
+              flex: 1,
+              minHeight: 44,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "transparent",
+              color: P.DIM,
+              border: `1.5px solid ${P.INK}22`,
+              borderRadius: 99,
+              padding: "10px 10px",
+              fontWeight: 600,
+              fontSize: 12.5,
+              fontFamily: "inherit",
+            }}
+          >
+            <Languages size={14} aria-hidden="true" /> &nbsp;Allergie-Karte
+          </button>
+
+          <button
+            type="button"
+            className="tap"
+            onClick={onOpenNotfall}
+            style={{
+              flex: 1,
+              minHeight: 44,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: `${P.RED}12`,
+              color: P.RED,
+              border: `1.5px solid ${P.RED}55`,
+              borderRadius: 99,
+              padding: "10px 10px",
+              fontWeight: 700,
+              fontSize: 12.5,
+              fontFamily: "inherit",
+            }}
+          >
+            <Siren size={14} aria-hidden="true" /> &nbsp;Notfallplan
+          </button>
+        </div>
       </div>
 
       <TabBar P={P} tab="scan" onTab={onTab} />
@@ -486,12 +621,10 @@ export default function ScanScreen({
             style={{
               position: "relative",
               margin: "calc(10px + env(safe-area-inset-top)) 14px 0",
-              // Anchored near the top and capped short: the iOS keyboard
-              // covers roughly the bottom half of the screen once the field
-              // is focused, so this stays clear of it and results (below the
-              // field, inside the same scroll box) never end up hidden
-              // underneath the keyboard.
-              maxHeight: "45dvh",
+              // Befund 11: real free space above the keyboard (see the
+              // visualViewport effect above), falling back to the previous
+              // static 45dvh cap wherever that API isn't available.
+              maxHeight: sheetMaxHeight,
               display: "flex",
               flexDirection: "column",
               background: P.BG,
@@ -534,9 +667,14 @@ export default function ScanScreen({
               style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "0 16px 16px" }}
             >
               {sheet === "manual" ? (
-                <ManualEntry onSubmit={onDetected} disabled={loading} />
+                <ManualEntry onSubmit={handleManualSubmit} disabled={loading} />
               ) : (
-                <ProductSearch P={P} onSelect={onDetected} disabled={loading} />
+                <ProductSearch
+                  P={P}
+                  onSelect={handleSearchSelect}
+                  disabled={loading}
+                  knownVerdicts={knownVerdicts}
+                />
               )}
             </div>
           </div>

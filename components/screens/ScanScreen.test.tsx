@@ -14,6 +14,35 @@ vi.mock("@/components/BarcodeScanner", () => ({
   ),
 }));
 
+// Real product-name search (debounced fetch) is exercised by
+// useProductSearch.test.ts / ProductSearch.test.tsx; here ScanScreen only
+// needs to know the search sheet renders *some* selectable result so its own
+// wiring (closing on selection, forwarding knownVerdicts) can be tested
+// without fake timers or network mocking.
+const SEARCH_HIT = {
+  barcode: "4011200296908",
+  productName: "Magnum Mandel",
+  brand: "Magnum",
+  imageUrl: null,
+};
+vi.mock("@/components/useProductSearch", () => ({
+  useProductSearch: () => ({
+    searching: false,
+    results: [SEARCH_HIT],
+    query: "magnum",
+    search: vi.fn(),
+  }),
+}));
+
+type HistoryEntryLike = {
+  id: string;
+  ts: number;
+  barcode: string;
+  name: string;
+  brand: string;
+  verdict: "safe" | "danger" | "trace" | "partial" | "unknown";
+};
+
 function renderScreen(
   favorites: Array<{
     barcode: string;
@@ -23,7 +52,7 @@ function renderScreen(
     ts: number;
     addedAt: number;
   }> = [],
-  opts: { autoStartCamera?: boolean } = {},
+  opts: { autoStartCamera?: boolean; loading?: boolean; history?: HistoryEntryLike[] } = {},
 ) {
   const onDetected = vi.fn();
   const onOpenFavorite = vi.fn();
@@ -31,12 +60,12 @@ function renderScreen(
   const { container } = render(
     <ScanScreen
       P={palette("mustard")}
-      loading={false}
+      loading={opts.loading ?? false}
       paused={false}
       haptic={false}
       sound={false}
       autoStartCamera={opts.autoStartCamera ?? false}
-      history={[]}
+      history={opts.history ?? []}
       favorites={favorites}
       onDetected={onDetected}
       onOpen={vi.fn()}
@@ -144,6 +173,10 @@ describe("ScanScreen entry sheet (UX8)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Prüfen" }));
 
     expect(onDetected).toHaveBeenCalledWith("4011200296908");
+    // Befund 05: no more stale sheet lingering behind the result — closing
+    // it is what "clears the field" too, since the next open is a fresh
+    // ManualEntry mount rather than the same instance with old input.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("makes the scanner and tab bar inert while the sheet is open", async () => {
@@ -214,5 +247,122 @@ describe("ScanScreen Favoriten strip (F2)", () => {
     expect(onOpenFavorite).toHaveBeenCalledWith(
       expect.objectContaining({ barcode: "20137946" }),
     );
+  });
+});
+
+describe("ScanScreen layout order (Befund 04)", () => {
+  it("places the Favoriten strip before the manual/search entry buttons", () => {
+    renderScreen([
+      {
+        barcode: "20137946",
+        name: "Reiswaffel",
+        brand: "dm Bio",
+        verdict: "safe",
+        ts: Date.now(),
+        addedAt: Date.now(),
+      },
+    ]);
+
+    const favoritenLabel = screen.getByText("favoriten");
+    const manualButton = screen.getByRole("button", { name: "Barcode manuell eingeben" });
+
+    // DOCUMENT_POSITION_FOLLOWING: manualButton comes *after* favoritenLabel
+    // in DOM order, i.e. Favoriten renders first.
+    expect(
+      favoritenLabel.compareDocumentPosition(manualButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("keeps Allergie-Karte and Notfallplan as a distinct pair, still after the entry buttons", () => {
+    renderScreen();
+
+    const manualButton = screen.getByRole("button", { name: "Barcode manuell eingeben" });
+    const cardButton = screen.getByRole("button", { name: "Allergie-Karte" });
+    const notfallButton = screen.getByRole("button", { name: /Notfallplan/ });
+
+    expect(
+      manualButton.compareDocumentPosition(cardButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      manualButton.compareDocumentPosition(notfallButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+});
+
+describe("ScanScreen entry sheet closes on submit/select (Befund 05)", () => {
+  it("closes the search sheet after selecting a result and forwards its barcode", async () => {
+    const { onDetected } = renderScreen();
+    await openSearch();
+
+    await userEvent.click(screen.getByRole("button", { name: /Magnum Mandel/ }));
+
+    expect(onDetected).toHaveBeenCalledWith(SEARCH_HIT.barcode);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("returns focus to the opener after a submit closes the sheet", async () => {
+    renderScreen();
+    const opener = await screen.findByRole("button", { name: "Barcode manuell eingeben" });
+    await userEvent.click(opener);
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Barcode manuell eingeben" }),
+      "4011200296908",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Prüfen" }));
+
+    // Same opener-focus mechanism as Escape/scrim/✕ — see the comment on the
+    // effect in ScanScreen.tsx for why this is still wanted even though the
+    // result overlay is about to take over.
+    expect(opener).toHaveFocus();
+  });
+});
+
+describe("ScanScreen entry sheet loading state (Befund 05)", () => {
+  it("shows a busy state in the manual-entry sheet while a lookup is already in flight", async () => {
+    renderScreen([], { loading: true });
+    await openManual();
+
+    const button = screen.getByRole("button", { name: /Prüfe/ });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("shows a busy state in the search sheet while a lookup is already in flight", async () => {
+    renderScreen([], { loading: true });
+    await openSearch();
+
+    expect(screen.getByRole("status", { name: /Prüfe Produkt/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Magnum Mandel/ })).toBeDisabled();
+  });
+});
+
+describe("ScanScreen search results show known verdicts (Befund 11)", () => {
+  it("marks a result matching a history entry with its verdict, labeled as a past check", async () => {
+    renderScreen([], {
+      history: [
+        {
+          id: "h1",
+          ts: Date.now() - 5 * 60_000,
+          barcode: SEARCH_HIT.barcode,
+          name: SEARCH_HIT.productName,
+          brand: SEARCH_HIT.brand,
+          verdict: "safe",
+        },
+      ],
+    });
+    await openSearch();
+
+    // Glyph, not color alone (the app's rule: never color-only status) —
+    // and an accessible name that reads as a past check, not a fresh one.
+    const mark = screen.getByLabelText(/Zuletzt geprüft/);
+    expect(mark).toHaveTextContent("✓");
+  });
+
+  it("shows no verdict mark for a result with no matching history/favorite", async () => {
+    renderScreen();
+    await openSearch();
+
+    expect(screen.queryByLabelText(/Zuletzt geprüft/)).not.toBeInTheDocument();
   });
 });
