@@ -2,10 +2,27 @@
 
 import { useState, type CSSProperties, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
-import type { EmergencyPlan } from "@/lib/emergency";
-import { DEFAULT_EMERGENCY_STEPS, EMERGENCY_NOTES_MAX } from "@/lib/emergency";
+import type { AutoInjectorPen, EmergencyContact, EmergencyPlan, PenStatus } from "@/lib/emergency";
+import {
+  DEFAULT_EMERGENCY_STEPS,
+  EMERGENCY_CONTACTS_MAX,
+  EMERGENCY_NOTES_MAX,
+  cleanPhoneForTel,
+  getPenStatus,
+  normalizeEmergencyPlan,
+} from "@/lib/emergency";
 import { AppShell, Mono, SectionTitle } from "@/components/ui";
-import { ArrowLeft, Check, Pencil, Phone, Plus, RotateCcw, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  Pencil,
+  Phone,
+  PhoneCall,
+  Plus,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
 
 /**
  * Sets a textarea's inline height from its own `scrollHeight` so it grows
@@ -76,6 +93,51 @@ const pillButton = (P: Palette, filled: boolean): CSSProperties => ({
   fontFamily: "inherit",
 });
 
+/** Shared look for the plain text/date inputs in the pens and contacts
+ * editors — same visual language as the step textareas above (Befund 07),
+ * just single-line. >=16px font so iOS Safari doesn't zoom on focus. */
+const fieldStyle = (P: Palette): CSSProperties => ({
+  width: "100%",
+  padding: "9px 11px",
+  borderRadius: 10,
+  background: P.BG,
+  color: P.INK,
+  border: `1.5px solid ${P.INK}22`,
+  fontFamily: "inherit",
+  fontSize: 16,
+});
+
+/** `YYYY-MM-DD` -> `DD.MM.YYYY` for display. Purely cosmetic (the stored
+ * value and the <input type="date"> both keep the ISO form) — falls back to
+ * the raw string for anything that isn't a clean calendar date, so a
+ * malformed value never disappears silently. */
+function formatGermanDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  const [, y, mo, d] = m;
+  return `${d}.${mo}.${y}`;
+}
+
+/**
+ * Read-view label + color for one pen's status. Deliberately never says a
+ * non-expired pen is "fine"/"safe" — see the `pens` field's doc comment in
+ * lib/emergency.ts: this is a reminder about a printed date, not a claim
+ * about the device's actual condition.
+ */
+function penStatusInfo(status: PenStatus, expiresOn: string, P: Palette): { text: string; color: string } {
+  const date = formatGermanDate(expiresOn);
+  switch (status) {
+    case "expired":
+      return { text: `Ablaufdatum überschritten (${date})`, color: P.RED };
+    case "soon":
+      return { text: `Ablaufdatum bald erreicht (${date})`, color: P.AMBER_TEXT };
+    case "ok":
+      return { text: `Ablaufdatum: ${date}`, color: P.DIM };
+    case "unknown":
+      return { text: "Noch kein Ablaufdatum eingetragen", color: P.DIM };
+  }
+}
+
 export default function EmergencyScreen({
   P,
   plan,
@@ -97,11 +159,23 @@ export default function EmergencyScreen({
   // first contact. `confirmed` still gates whether that read view shows the
   // template disclaimer and the accept-as-is action (item F4: "Vorlage,
   // die der Nutzer bestätigt/editiert").
+  // Defends against a plan saved by an older app version that predates
+  // `pens`/`contacts` (see normalizeEmergencyPlan's own doc comment for why
+  // usePrefs' top-level spread doesn't already cover this). Everything below
+  // reads `safePlan`, never the raw `plan` prop.
+  const safePlan = normalizeEmergencyPlan(plan);
+
   const [editingSteps, setEditingSteps] = useState(false);
-  const [draftSteps, setDraftSteps] = useState<string[]>(plan.steps);
+  const [draftSteps, setDraftSteps] = useState<string[]>(safePlan.steps);
+
+  const [editingPens, setEditingPens] = useState(false);
+  const [draftPens, setDraftPens] = useState<AutoInjectorPen[]>(safePlan.pens);
+
+  const [editingContacts, setEditingContacts] = useState(false);
+  const [draftContacts, setDraftContacts] = useState<EmergencyContact[]>(safePlan.contacts);
 
   function startEdit() {
-    setDraftSteps(plan.steps);
+    setDraftSteps(safePlan.steps);
     setEditingSteps(true);
   }
   function cancelEdit() {
@@ -110,11 +184,11 @@ export default function EmergencyScreen({
   function saveDraft() {
     const cleaned = draftSteps.map((s) => s.trim()).filter((s) => s.length > 0);
     if (cleaned.length === 0) return;
-    onPlanChange({ ...plan, steps: cleaned, confirmed: true });
+    onPlanChange({ ...safePlan, steps: cleaned, confirmed: true });
     setEditingSteps(false);
   }
   function acceptTemplate() {
-    onPlanChange({ ...plan, confirmed: true });
+    onPlanChange({ ...safePlan, confirmed: true });
     setEditingSteps(false);
   }
   function resetDraftToTemplate() {
@@ -128,6 +202,68 @@ export default function EmergencyScreen({
   }
 
   const canSave = draftSteps.some((s) => s.trim().length > 0);
+
+  // --- Feature B: auto-injector pens ------------------------------------
+  function startEditPens() {
+    setDraftPens(safePlan.pens);
+    setEditingPens(true);
+  }
+  function cancelEditPens() {
+    setEditingPens(false);
+  }
+  function savePens() {
+    // Drop only rows nobody touched (both fields still blank) — unlike the
+    // step list, an incomplete pen (e.g. a date without a label yet) is
+    // still useful to keep around, so it isn't required to be "complete".
+    const cleaned = draftPens
+      .map((p) => ({ label: p.label.trim(), expiresOn: p.expiresOn }))
+      .filter((p) => p.label.length > 0 || p.expiresOn.length > 0);
+    onPlanChange({ ...safePlan, pens: cleaned });
+    setEditingPens(false);
+  }
+  function addDraftPen() {
+    setDraftPens((prev) => [...prev, { label: "", expiresOn: "" }]);
+  }
+  function updateDraftPen(i: number, patch: Partial<AutoInjectorPen>) {
+    setDraftPens((prev) => prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
+  }
+  function removeDraftPen(i: number) {
+    setDraftPens((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  // --- Feature C: emergency contacts -------------------------------------
+  function startEditContacts() {
+    setDraftContacts(safePlan.contacts);
+    setEditingContacts(true);
+  }
+  function cancelEditContacts() {
+    setEditingContacts(false);
+  }
+  function saveContacts() {
+    const cleaned = draftContacts
+      .map((c) => ({ label: c.label.trim(), phone: c.phone.trim() }))
+      .filter((c) => c.label.length > 0 || c.phone.length > 0)
+      .slice(0, EMERGENCY_CONTACTS_MAX);
+    onPlanChange({ ...safePlan, contacts: cleaned });
+    setEditingContacts(false);
+  }
+  function addDraftContact() {
+    if (draftContacts.length >= EMERGENCY_CONTACTS_MAX) return;
+    setDraftContacts((prev) => [...prev, { label: "", phone: "" }]);
+  }
+  function updateDraftContact(i: number, patch: Partial<EmergencyContact>) {
+    setDraftContacts((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  }
+  function removeDraftContact(i: number) {
+    setDraftContacts((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  // tel: links only for contacts that actually have a usable number — a
+  // contact with just a name typed in so far shouldn't render as a dead
+  // link in the read view (it's still kept in the editor to finish later).
+  const contactLinks = safePlan.contacts
+    .map((c) => ({ ...c, cleaned: cleanPhoneForTel(c.phone) }))
+    .filter((c) => c.cleaned.length > 0);
 
   return (
     <AppShell P={P}>
@@ -204,6 +340,151 @@ export default function EmergencyScreen({
           Öffnet den Wähler — iOS fragt vor dem Anruf noch einmal nach.
         </p>
 
+        {/* Feature C: secondary to 112 on purpose — smaller text, plain
+            links, no red fill — but placed right below it, since these are
+            exactly the numbers someone hands the phone over for next. */}
+        <Mono style={{ opacity: 0.7, marginBottom: 8, display: "block" }}>
+          Weitere Notfallkontakte
+        </Mono>
+        <Card P={P}>
+          {editingContacts ? (
+            <>
+              {draftContacts.map((c, i) => (
+                <div
+                  key={i}
+                  style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 10 }}
+                >
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <input
+                      type="text"
+                      aria-label={`Kontakt ${i + 1} Name`}
+                      value={c.label}
+                      onChange={(e) => updateDraftContact(i, { label: e.target.value })}
+                      placeholder="z. B. Mama, Kinderärztin Dr. …"
+                      style={fieldStyle(P)}
+                    />
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      aria-label={`Kontakt ${i + 1} Telefonnummer`}
+                      value={c.phone}
+                      onChange={(e) => updateDraftContact(i, { phone: e.target.value })}
+                      placeholder="z. B. 0151 2345678"
+                      style={fieldStyle(P)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="tap hit44"
+                    onClick={() => removeDraftContact(i)}
+                    aria-label={`Kontakt ${i + 1} entfernen`}
+                    style={{ flexShrink: 0, background: "transparent", border: 0, color: P.DIM }}
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+
+              {draftContacts.length < EMERGENCY_CONTACTS_MAX ? (
+                <button
+                  type="button"
+                  className="tap hit44"
+                  onClick={addDraftContact}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    marginTop: 4,
+                    background: "transparent",
+                    border: 0,
+                    color: P.INK,
+                    fontFamily: "inherit",
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    padding: "6px 0",
+                  }}
+                >
+                  <Plus size={14} aria-hidden="true" /> Kontakt hinzufügen
+                </button>
+              ) : (
+                <p style={{ margin: "4px 0 0", fontSize: 12, opacity: 0.6 }}>
+                  Maximal {EMERGENCY_CONTACTS_MAX} Kontakte.
+                </p>
+              )}
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 8,
+                  marginTop: 14,
+                  paddingTop: 12,
+                  borderTop: `1px solid ${P.INK}14`,
+                }}
+              >
+                <button type="button" className="tap" onClick={cancelEditContacts} style={pillButton(P, false)}>
+                  Abbrechen
+                </button>
+                <button type="button" className="tap" onClick={saveContacts} style={pillButton(P, true)}>
+                  Speichern
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {contactLinks.length === 0 ? (
+                <p style={{ margin: "0 0 10px", fontSize: 12.5, opacity: 0.7, lineHeight: 1.4 }}>
+                  Noch keine weiteren Kontakte hinterlegt.
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+                  {contactLinks.map((c, i) => (
+                    <a
+                      key={i}
+                      href={`tel:${c.cleaned}`}
+                      className="tap hit44"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        background: `${P.INK}0A`,
+                        color: P.INK,
+                        textDecoration: "none",
+                        fontWeight: 700,
+                        fontSize: 14.5,
+                      }}
+                    >
+                      <PhoneCall size={16} aria-hidden="true" style={{ flexShrink: 0 }} />
+                      {c.label ? c.label : c.phone}
+                    </a>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                className="tap hit44"
+                onClick={startEditContacts}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "transparent",
+                  border: 0,
+                  color: P.INK,
+                  fontFamily: "inherit",
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  padding: "6px 0",
+                }}
+              >
+                <Pencil size={13} aria-hidden="true" /> Kontakte bearbeiten
+              </button>
+            </>
+          )}
+        </Card>
+
         <Mono style={{ opacity: 0.7, marginBottom: 8, display: "block" }}>
           Adrenalin-Notfallplan
         </Mono>
@@ -211,7 +492,7 @@ export default function EmergencyScreen({
         <Card P={P}>
           {editingSteps ? (
             <>
-              {!plan.confirmed ? (
+              {!safePlan.confirmed ? (
                 <p style={{ margin: "0 0 12px", fontSize: 12.5, opacity: 0.75, lineHeight: 1.45 }}>
                   Das ist eine allgemeine Vorlage, keine Anweisung für euren
                   Fall. Prüft sie mit eurem Ärzt:innen-Team, passt sie an und
@@ -376,7 +657,7 @@ export default function EmergencyScreen({
                   explicit accept-as-is action live here, prominently, before
                   any editing — the plan isn't "the family's own" until
                   `confirmed` is set. */}
-              {!plan.confirmed ? (
+              {!safePlan.confirmed ? (
                 <p style={{ margin: "0 0 12px", fontSize: 12.5, opacity: 0.75, lineHeight: 1.45 }}>
                   Das ist eine allgemeine Vorlage, keine Anweisung für euren
                   Fall. Prüft sie mit eurem Ärzt:innen-Team, passt sie an und
@@ -384,10 +665,10 @@ export default function EmergencyScreen({
                 </p>
               ) : null}
               <ol style={{ margin: 0, padding: "0 0 0 22px" }}>
-                {plan.steps.map((step, i) => (
+                {safePlan.steps.map((step, i) => (
                   <li
                     key={i}
-                    style={{ fontSize: 15, lineHeight: 1.55, marginBottom: i < plan.steps.length - 1 ? 10 : 0 }}
+                    style={{ fontSize: 15, lineHeight: 1.55, marginBottom: i < safePlan.steps.length - 1 ? 10 : 0 }}
                   >
                     {step}
                   </li>
@@ -398,11 +679,11 @@ export default function EmergencyScreen({
                   display: "flex",
                   gap: 8,
                   marginTop: 14,
-                  paddingTop: plan.confirmed ? undefined : 12,
-                  borderTop: plan.confirmed ? undefined : `1px solid ${P.INK}14`,
+                  paddingTop: safePlan.confirmed ? undefined : 12,
+                  borderTop: safePlan.confirmed ? undefined : `1px solid ${P.INK}14`,
                 }}
               >
-                {!plan.confirmed ? (
+                {!safePlan.confirmed ? (
                   <button
                     type="button"
                     className="tap hit44"
@@ -418,7 +699,7 @@ export default function EmergencyScreen({
                   onClick={startEdit}
                   aria-label="Notfallplan bearbeiten"
                   style={{
-                    ...(plan.confirmed
+                    ...(safePlan.confirmed
                       ? {
                           background: "transparent",
                           border: 0,
@@ -442,15 +723,171 @@ export default function EmergencyScreen({
           )}
         </Card>
 
+        {/* Feature B: its own read/edit section, directly under the step
+            list — the list itself names "second pen" as the normal case, so
+            this is where a family checks/updates both dates. */}
+        <Mono style={{ opacity: 0.7, marginBottom: 8, display: "block" }}>
+          Adrenalin-Autoinjektoren
+        </Mono>
+        <Card P={P}>
+          {editingPens ? (
+            <>
+              <p style={{ margin: "0 0 12px", fontSize: 12.5, opacity: 0.75, lineHeight: 1.45 }}>
+                Das Ablaufdatum ist eine Erinnerung, keine Freigabe — im
+                Zweifel Packungsbeilage oder Apotheke fragen.
+              </p>
+              {draftPens.map((p, i) => (
+                <div
+                  key={i}
+                  style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 10 }}
+                >
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <input
+                      type="date"
+                      aria-label={`Pen ${i + 1} Ablaufdatum`}
+                      value={p.expiresOn}
+                      onChange={(e) => updateDraftPen(i, { expiresOn: e.target.value })}
+                      style={fieldStyle(P)}
+                    />
+                    <input
+                      type="text"
+                      aria-label={`Pen ${i + 1} Name oder Ort`}
+                      value={p.label}
+                      onChange={(e) => updateDraftPen(i, { label: e.target.value })}
+                      placeholder="z. B. Rucksack, Kita"
+                      style={fieldStyle(P)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="tap hit44"
+                    onClick={() => removeDraftPen(i)}
+                    aria-label={`Pen ${i + 1} entfernen`}
+                    style={{ flexShrink: 0, background: "transparent", border: 0, color: P.DIM }}
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                className="tap hit44"
+                onClick={addDraftPen}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 4,
+                  background: "transparent",
+                  border: 0,
+                  color: P.INK,
+                  fontFamily: "inherit",
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  padding: "6px 0",
+                }}
+              >
+                <Plus size={14} aria-hidden="true" /> Pen hinzufügen
+              </button>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: 8,
+                  marginTop: 14,
+                  paddingTop: 12,
+                  borderTop: `1px solid ${P.INK}14`,
+                }}
+              >
+                <button type="button" className="tap" onClick={cancelEditPens} style={pillButton(P, false)}>
+                  Abbrechen
+                </button>
+                <button type="button" className="tap" onClick={savePens} style={pillButton(P, true)}>
+                  Speichern
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {safePlan.pens.length === 0 ? (
+                <p style={{ margin: "0 0 10px", fontSize: 12.5, opacity: 0.7, lineHeight: 1.4 }}>
+                  Noch keine Autoinjektoren hinterlegt.
+                </p>
+              ) : (
+                <div style={{ marginBottom: 10 }}>
+                  {safePlan.pens.map((p, i) => {
+                    const status = getPenStatus(p.expiresOn, new Date());
+                    const info = penStatusInfo(status, p.expiresOn, P);
+                    return (
+                      <div
+                        key={i}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 0",
+                          borderBottom: i < safePlan.pens.length - 1 ? `1px solid ${P.INK}14` : undefined,
+                        }}
+                      >
+                        <span style={{ fontSize: 14.5, fontWeight: 700 }}>
+                          {p.label ? p.label : "Autoinjektor"}
+                        </span>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            fontSize: 12.5,
+                            fontWeight: 700,
+                            color: info.color,
+                            textAlign: "right",
+                          }}
+                        >
+                          {status === "expired" || status === "soon" ? (
+                            <AlertTriangle size={13} aria-hidden="true" style={{ flexShrink: 0 }} />
+                          ) : null}
+                          {info.text}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <button
+                type="button"
+                className="tap hit44"
+                onClick={startEditPens}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "transparent",
+                  border: 0,
+                  color: P.INK,
+                  fontFamily: "inherit",
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  padding: "6px 0",
+                }}
+              >
+                <Pencil size={13} aria-hidden="true" /> Autoinjektoren bearbeiten
+              </button>
+            </>
+          )}
+        </Card>
+
         <Mono style={{ opacity: 0.7, marginBottom: 8, display: "block" }}>
           Medikament, Dosis, Notfallset-Ort
         </Mono>
         <textarea
           ref={autoGrowRef}
           aria-label="Medikament, Dosis, Notfallset-Ort"
-          value={plan.notes}
+          value={safePlan.notes}
           onChange={(e) => {
-            onPlanChange({ ...plan, notes: e.target.value.slice(0, EMERGENCY_NOTES_MAX) });
+            onPlanChange({ ...safePlan, notes: e.target.value.slice(0, EMERGENCY_NOTES_MAX) });
             // Same immediate-growth reasoning as the step fields above: the
             // DOM node already has the new text, so this reflects it on the
             // same keystroke rather than one render behind.

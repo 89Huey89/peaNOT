@@ -113,6 +113,8 @@ describe("usePrefs emergencyPlan (F4)", () => {
         steps: ["Adrenalin-Pen anwenden.", "112 anrufen."],
         notes: "Jext 150 µg im Rucksack.",
         confirmed: true,
+        pens: [],
+        contacts: [],
       });
     });
     rerender();
