@@ -7,6 +7,11 @@ describe("useHistoryOverlay", () => {
   let backSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    // jsdom's location/history persist across tests within this file (one
+    // jsdom window per file, not per test) — reset it before every test so
+    // a `screen` URL written by one test can't leak into the next one's
+    // assertions.
+    window.history.replaceState(null, "", "/");
     pushSpy = vi.spyOn(window.history, "pushState");
     // Real browsers fire popstate asynchronously after history.back(); the
     // hook doesn't care about timing, only that it eventually gets exactly
@@ -123,5 +128,67 @@ describe("useHistoryOverlay", () => {
     expect(onCloseInner).not.toHaveBeenCalled();
 
     outer.unmount();
+  });
+
+  // Befund 09: the optional `screen` param mirrors the overlay into
+  // `?screen=<screen>` while it's open, and puts the address bar back to
+  // whatever it showed right before — normally the tab the overlay was
+  // opened from (app/page.tsx keeps that in sync separately).
+  describe("`screen` URL mirror (Befund 09)", () => {
+    it("writes ?screen=<screen> while open and restores the prior URL on a UI close", () => {
+      window.history.replaceState(null, "", "/?screen=verlauf");
+      const onClose = vi.fn();
+      const { rerender, unmount } = renderHook(
+        ({ open }) => useHistoryOverlay(open, onClose, "karte"),
+        { initialProps: { open: false } },
+      );
+      expect(window.location.search).toBe("?screen=verlauf");
+
+      rerender({ open: true });
+      expect(window.location.search).toBe("?screen=karte");
+
+      // Closed via the UI (e.g. a "Zurück" tap flips `open` directly,
+      // without any popstate ever having fired) — the address bar must
+      // fall back to the tab it was opened from, not just "somewhere".
+      rerender({ open: false });
+      expect(window.location.search).toBe("?screen=verlauf");
+      expect(onClose).not.toHaveBeenCalled();
+
+      unmount();
+    });
+
+    it("restores the prior URL on a popstate close (edge-swipe) too", () => {
+      window.history.replaceState(null, "", "/?screen=profil");
+      const onClose = vi.fn();
+      const { rerender, unmount } = renderHook(
+        ({ open }) => useHistoryOverlay(open, onClose, "notfall"),
+        { initialProps: { open: false } },
+      );
+      rerender({ open: true });
+      expect(window.location.search).toBe("?screen=notfall");
+
+      window.dispatchEvent(new PopStateEvent("popstate"));
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(window.location.search).toBe("?screen=profil");
+
+      unmount();
+    });
+
+    it("leaves the URL alone entirely when no `screen` is given (e.g. the result dialog)", () => {
+      window.history.replaceState(null, "", "/?screen=scan");
+      const onClose = vi.fn();
+      const { rerender, unmount } = renderHook(({ open }) => useHistoryOverlay(open, onClose), {
+        initialProps: { open: false },
+      });
+
+      rerender({ open: true });
+      expect(window.location.search).toBe("?screen=scan");
+
+      rerender({ open: false });
+      expect(window.location.search).toBe("?screen=scan");
+
+      unmount();
+    });
   });
 });

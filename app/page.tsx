@@ -22,6 +22,17 @@ import EmergencyScreen from "@/components/screens/EmergencyScreen";
 
 type Route = "onboarding" | "scan" | "verlauf" | "profil" | "result" | "karte" | "notfall";
 
+// Befund 09: the subset of Route values that get mirrored into `?screen=`.
+// "onboarding" is deliberately excluded (it's driven by prefs.onboarded, not
+// the URL — see the bootstrap effect) and so is "result" (a transient lookup
+// result that doesn't survive a reload, so a deep link to it would show a
+// safety verdict with no data behind it — see Befund 09 in the review).
+const DEEP_LINKABLE_ROUTES: readonly Route[] = ["scan", "verlauf", "profil", "karte", "notfall"];
+
+function isDeepLinkableRoute(value: string | null): value is Route {
+  return !!value && (DEEP_LINKABLE_ROUTES as readonly string[]).includes(value);
+}
+
 export default function Home() {
   const { prefs, setPref, importPrefs, ready: prefsReady } = usePrefs();
   const {
@@ -97,10 +108,20 @@ export default function Home() {
   }, [P.BG]);
 
   // Decide the first screen once storage has loaded (avoids onboarding flash).
+  // Befund 09: also honors a `?screen=` deep link (a manifest shortcut, a
+  // second Home Screen icon, or a shared/reloaded URL) so a reload doesn't
+  // always dump the user back on Scan. prefs.onboarded === false always
+  // wins over the URL — onboarding is a one-time gate, not a "screen" a link
+  // should be able to skip.
   useEffect(() => {
     if (!ready || bootstrapped.current) return;
     bootstrapped.current = true;
-    setRoute(prefs.onboarded ? "scan" : "onboarding");
+    if (!prefs.onboarded) {
+      setRoute("onboarding");
+      return;
+    }
+    const requested = new URLSearchParams(window.location.search).get("screen");
+    setRoute(isDeepLinkableRoute(requested) ? requested : "scan");
   }, [ready, prefs.onboarded]);
 
   const runLookup = useCallback(
@@ -151,6 +172,19 @@ export default function Home() {
     setRoute("notfall");
   }, []);
 
+  // Befund 09: the bottom TabBar's own tab switches (Scan/Verlauf/Profil) use
+  // replaceState, not pushState — they're lateral moves between sibling
+  // screens, not something the back gesture should ever need to undo one at
+  // a time, so they must not grow the history stack the way opening an
+  // overlay does. This mirrors the *current* tab into `?screen=` mainly so
+  // that whichever tab is showing when the user later opens the Allergie-
+  // Karte or Notfallplan becomes the URL those overlays' own pushState calls
+  // (see useHistoryOverlay's `screen` param, below) restore on close.
+  const goTab = useCallback((t: Tab) => {
+    setRoute(t);
+    window.history.replaceState(null, "", `?screen=${t}`);
+  }, []);
+
   // If a network-error result is on screen when connectivity returns, retry
   // the same barcode automatically — the household member doesn't have to
   // remember to tap "Erneut prüfen" once they're back near a signal.
@@ -169,9 +203,11 @@ export default function Home() {
   const resultOpen = route === "result" && !!result;
   const karteOpen = route === "karte";
   const notfallOpen = route === "notfall";
+  // Only karte/notfall get a `screen` (Befund 09) — the result dialog is
+  // intentionally left out of the URL entirely (see DEEP_LINKABLE_ROUTES).
   useHistoryOverlay(resultOpen, () => setRoute("scan"));
-  useHistoryOverlay(karteOpen, () => setRoute(cardReturnTab));
-  useHistoryOverlay(notfallOpen, () => setRoute(notfallReturnTab));
+  useHistoryOverlay(karteOpen, () => setRoute(cardReturnTab), "karte");
+  useHistoryOverlay(notfallOpen, () => setRoute(notfallReturnTab), "notfall");
 
   if (!ready || route === null) {
     return (
@@ -210,7 +246,7 @@ export default function Home() {
         onRestore={restore}
         onToggleFavorite={toggleFavorite}
         onOpenCard={() => openCard("verlauf")}
-        onTab={(t: Tab) => setRoute(t)}
+        onTab={goTab}
       />
     );
   } else if (route === "karte") {
@@ -245,7 +281,7 @@ export default function Home() {
         }}
         onOpenCard={() => openCard("profil")}
         onOpenNotfall={() => openNotfall("profil")}
-        onTab={(t: Tab) => setRoute(t)}
+        onTab={goTab}
         onExport={exportData}
         onImportFile={importData}
       />
@@ -275,7 +311,7 @@ export default function Home() {
             onOpenFavorite={openFavorite}
             onOpenCard={() => openCard("scan")}
             onOpenNotfall={() => openNotfall("scan")}
-            onTab={(t: Tab) => setRoute(t)}
+            onTab={goTab}
           />
         </div>
         {resultOpen ? (

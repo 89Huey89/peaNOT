@@ -38,6 +38,13 @@ function jsonResponse(body: ProductResult) {
 // Made synchronous here, file-wide, so every test's history interactions
 // stay self-contained regardless of run order.
 beforeEach(() => {
+  // Befund 09: page.tsx now writes real query params via
+  // replaceState/pushState (tab switches, karte/notfall). jsdom's
+  // location/history persist across tests within this file (one jsdom
+  // window per file, not per test), so start every test at a clean "/" —
+  // otherwise a `?screen=` written by one test leaks into the next test's
+  // bootstrap read.
+  window.history.replaceState(null, "", "/");
   vi.spyOn(window.history, "back").mockImplementation(() => {
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
@@ -284,5 +291,142 @@ describe("Home browser-history integration (UX9)", () => {
 
     expect(() => fireEvent.popState(window)).not.toThrow();
     expect(screen.getByTestId("scan-screen-stub")).toBeInTheDocument();
+  });
+});
+
+describe("Home URL routing (Befund 09)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    __clearProductLookupCache();
+  });
+
+  function stubMatchMedia() {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+  }
+
+  it("boots straight into the tab named by a ?screen= deep link", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+    window.history.replaceState(null, "", "/?screen=profil");
+
+    render(<Home />);
+
+    expect(await screen.findByRole("heading", { name: "Dein Profil" })).toBeInTheDocument();
+    // Didn't fall through to the default Scan screen.
+    expect(screen.queryByTestId("scan-screen-stub")).not.toBeInTheDocument();
+  });
+
+  it("falls back to Scan for an unknown ?screen= value", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+    window.history.replaceState(null, "", "/?screen=quatsch");
+
+    render(<Home />);
+
+    expect(await screen.findByTestId("scan-screen-stub")).toBeInTheDocument();
+  });
+
+  it("falls back to Scan when no ?screen= is present at all", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+    // beforeEach already reset location to "/", nothing more to arrange.
+
+    render(<Home />);
+
+    expect(await screen.findByTestId("scan-screen-stub")).toBeInTheDocument();
+  });
+
+  it("shows onboarding for ?screen=notfall when the household hasn't onboarded yet", async () => {
+    // No prefs written at all: DEFAULT_PREFS.onboarded is false, which must
+    // win over the deep link — a link can't skip the one-time gate.
+    stubMatchMedia();
+    window.history.replaceState(null, "", "/?screen=notfall");
+
+    render(<Home />);
+
+    expect(await screen.findByText("willkommen")).toBeInTheDocument();
+    expect(screen.queryByText("Notfallplan")).not.toBeInTheDocument();
+  });
+
+  it("writes the URL via replaceState on a tab switch, without growing the back-stack", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+    const pushSpy = vi.spyOn(window.history, "pushState");
+    const replaceSpy = vi.spyOn(window.history, "replaceState");
+
+    render(<Home />);
+    await userEvent.click(await screen.findByText("goto verlauf"));
+
+    expect(await screen.findByRole("heading", { name: "Verlauf" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?screen=verlauf");
+    // A tab switch is a lateral move, not something the back gesture should
+    // ever have to undo — it must never push a new history entry.
+    expect(pushSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).toHaveBeenCalled();
+  });
+
+  it("mirrors the allergy card into the URL while open and reverts it on Zurück", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+
+    render(<Home />);
+    await userEvent.click(await screen.findByText("goto verlauf"));
+    expect(window.location.search).toBe("?screen=verlauf");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Allergie-Karte öffnen" }));
+    expect(await screen.findByText("Allergie-Karte")).toBeInTheDocument();
+    expect(window.location.search).toBe("?screen=karte");
+
+    await userEvent.click(screen.getByRole("button", { name: "Zurück" }));
+    expect(window.location.search).toBe("?screen=verlauf");
+  });
+
+  it("mirrors the allergy card into the URL and reverts it on the back gesture too", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+
+    render(<Home />);
+    await userEvent.click(await screen.findByText("goto verlauf"));
+    await userEvent.click(await screen.findByRole("button", { name: "Allergie-Karte öffnen" }));
+    expect(window.location.search).toBe("?screen=karte");
+
+    fireEvent.popState(window);
+
+    // The gesture closes exactly one level — back on Verlauf, URL restored.
+    expect(screen.getByRole("heading", { name: "Verlauf" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?screen=verlauf");
+  });
+
+  it("never puts the result dialog into the URL", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+    vi.stubGlobal("fetch", vi.fn());
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "NEIN",
+      }),
+    );
+
+    render(<Home />);
+    const searchBeforeResult = window.location.search;
+
+    await userEvent.click(await screen.findByText("simulate detect"));
+    await screen.findByRole("dialog");
+
+    expect(window.location.search).toBe(searchBeforeResult);
   });
 });
