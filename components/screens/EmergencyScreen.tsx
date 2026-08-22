@@ -5,7 +5,46 @@ import type { Palette } from "@/lib/theme";
 import type { EmergencyPlan } from "@/lib/emergency";
 import { DEFAULT_EMERGENCY_STEPS, EMERGENCY_NOTES_MAX } from "@/lib/emergency";
 import { AppShell, Mono, SectionTitle } from "@/components/ui";
-import { ArrowLeft, Pencil, Phone, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Pencil, Phone, Plus, RotateCcw, Trash2 } from "lucide-react";
+
+/**
+ * Sets a textarea's inline height from its own `scrollHeight` so it grows
+ * with its content instead of clipping it (Befund 07). Called directly —
+ * not a hook — so it's safe to use from inside a `.map()` over a
+ * variable-length step list without breaking the Rules of Hooks.
+ *
+ * jsdom has no layout engine, so `scrollHeight` is always 0 there; the guard
+ * below means the fallback simply does nothing in tests rather than
+ * collapsing the field to 0px.
+ */
+function syncTextareaHeight(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  const next = el.scrollHeight;
+  el.style.height = next > 0 ? `${next}px` : "";
+}
+
+/**
+ * Ref callback for an auto-growing textarea. Runs the initial fit on mount
+ * (covers first render, including a step whose full DEFAULT_EMERGENCY_STEPS
+ * text is longer than its `rows`) and, where the browser supports it,
+ * re-fits on any later resize of the field via ResizeObserver — the case
+ * that matters here is the app's own "Sehr groß" font-size setting
+ * (`--font-scale` on `.device`) reflowing the same text into more lines
+ * without the value itself changing. Per-keystroke growth is handled
+ * separately in each field's `onChange` (see `syncTextareaHeight` calls
+ * there), since that already has the freshly-typed DOM node in hand.
+ *
+ * React 19 calls the function this returns when the element unmounts —
+ * e.g. when a step row is deleted — so the observer doesn't leak.
+ */
+function autoGrowRef(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  syncTextareaHeight(el);
+  if (typeof ResizeObserver === "undefined") return; // not in jsdom
+  const ro = new ResizeObserver(() => syncTextareaHeight(el));
+  ro.observe(el);
+  return () => ro.disconnect();
+}
 
 /** Shared card chrome for the two sections below — same shape as
  * ProfileScreen's local `Section`, kept local here since neither screen
@@ -51,11 +90,14 @@ export default function EmergencyScreen({
   onPlanChange: (plan: EmergencyPlan) => void;
   onBack: () => void;
 }) {
-  // Starts in edit mode until the family has confirmed or saved at least
-  // once (item F4: "Vorlage, die der Nutzer bestätigt/editiert") — so a
-  // first visit asks for a decision instead of quietly showing app-authored
-  // text as if it were the family's own plan.
-  const [editingSteps, setEditingSteps] = useState(!plan.confirmed);
+  // Befund 07: always starts in the calm read view, never the editor —
+  // even for an unconfirmed (still-template) plan. The family reads the
+  // whole template first and then decides ("Unverändert übernehmen" or
+  // "Bearbeiten") instead of landing straight in a wall of text fields on
+  // first contact. `confirmed` still gates whether that read view shows the
+  // template disclaimer and the accept-as-is action (item F4: "Vorlage,
+  // die der Nutzer bestätigt/editiert").
+  const [editingSteps, setEditingSteps] = useState(false);
   const [draftSteps, setDraftSteps] = useState<string[]>(plan.steps);
 
   function startEdit() {
@@ -199,13 +241,29 @@ export default function EmergencyScreen({
                     {i + 1}
                   </span>
                   <textarea
+                    ref={autoGrowRef}
                     aria-label={`Schritt ${i + 1}`}
                     value={step}
-                    onChange={(e) => updateDraftStep(i, e.target.value)}
+                    onChange={(e) => {
+                      updateDraftStep(i, e.target.value);
+                      // The native DOM value is already updated at this point
+                      // (before React's controlled re-render), so measuring
+                      // scrollHeight here already reflects what was just
+                      // typed — the field grows on this same keystroke
+                      // instead of one render behind.
+                      syncTextareaHeight(e.target);
+                    }}
                     rows={2}
                     style={{
                       flex: 1,
-                      resize: "vertical",
+                      // Auto-grow (below) replaces manual resize — letting
+                      // both fight over the height on the next keystroke
+                      // would just snap a manually-dragged height back.
+                      resize: "none",
+                      // Modern engines (current Safari) size the field from
+                      // its content directly; syncTextareaHeight above/below
+                      // is the fallback for the rest.
+                      fieldSizing: "content",
                       padding: "9px 11px",
                       borderRadius: 10,
                       background: P.BG,
@@ -236,7 +294,7 @@ export default function EmergencyScreen({
 
               <button
                 type="button"
-                className="tap"
+                className="tap hit44"
                 onClick={() => setDraftSteps((prev) => [...prev, ""])}
                 style={{
                   display: "inline-flex",
@@ -291,11 +349,14 @@ export default function EmergencyScreen({
                   <RotateCcw size={12} aria-hidden="true" /> Vorlage einsetzen
                 </button>
                 <div style={{ display: "flex", gap: 8 }}>
-                  {plan.confirmed ? (
-                    <button type="button" className="tap" onClick={cancelEdit} style={pillButton(P, false)}>
-                      Abbrechen
-                    </button>
-                  ) : null}
+                  {/* Both confirmed and unconfirmed plans now start out in
+                      the read view (see the `editingSteps` state comment
+                      above), so "Abbrechen" always has a real, meaningful
+                      screen to return to — no more restricting it to
+                      already-confirmed plans. */}
+                  <button type="button" className="tap" onClick={cancelEdit} style={pillButton(P, false)}>
+                    Abbrechen
+                  </button>
                   <button
                     type="button"
                     className="tap"
@@ -307,31 +368,21 @@ export default function EmergencyScreen({
                   </button>
                 </div>
               </div>
-
-              {!plan.confirmed ? (
-                <button
-                  type="button"
-                  className="tap"
-                  onClick={acceptTemplate}
-                  style={{
-                    marginTop: 10,
-                    width: "100%",
-                    background: "transparent",
-                    border: `1.5px dashed ${P.INK}33`,
-                    borderRadius: 12,
-                    padding: "9px 12px",
-                    color: P.INK,
-                    fontFamily: "inherit",
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                  }}
-                >
-                  Vorlage unverändert übernehmen
-                </button>
-              ) : null}
             </>
           ) : (
             <>
+              {/* Befund 07: read first, decide second. An unconfirmed plan
+                  is still just the app's template, so the disclaimer and the
+                  explicit accept-as-is action live here, prominently, before
+                  any editing — the plan isn't "the family's own" until
+                  `confirmed` is set. */}
+              {!plan.confirmed ? (
+                <p style={{ margin: "0 0 12px", fontSize: 12.5, opacity: 0.75, lineHeight: 1.45 }}>
+                  Das ist eine allgemeine Vorlage, keine Anweisung für euren
+                  Fall. Prüft sie mit eurem Ärzt:innen-Team, passt sie an und
+                  speichert eure eigene Version.
+                </p>
+              ) : null}
               <ol style={{ margin: 0, padding: "0 0 0 22px" }}>
                 {plan.steps.map((step, i) => (
                   <li
@@ -342,27 +393,51 @@ export default function EmergencyScreen({
                   </li>
                 ))}
               </ol>
-              <button
-                type="button"
-                className="tap"
-                onClick={startEdit}
-                aria-label="Notfallplan bearbeiten"
+              <div
                 style={{
-                  marginTop: 12,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "transparent",
-                  border: 0,
-                  color: P.INK,
-                  fontFamily: "inherit",
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  padding: "6px 0",
+                  display: "flex",
+                  gap: 8,
+                  marginTop: 14,
+                  paddingTop: plan.confirmed ? undefined : 12,
+                  borderTop: plan.confirmed ? undefined : `1px solid ${P.INK}14`,
                 }}
               >
-                <Pencil size={13} aria-hidden="true" /> Bearbeiten
-              </button>
+                {!plan.confirmed ? (
+                  <button
+                    type="button"
+                    className="tap hit44"
+                    onClick={acceptTemplate}
+                    style={{ ...pillButton(P, false), flex: 1, gap: 6 }}
+                  >
+                    <Check size={14} aria-hidden="true" /> Unverändert übernehmen
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="tap hit44"
+                  onClick={startEdit}
+                  aria-label="Notfallplan bearbeiten"
+                  style={{
+                    ...(plan.confirmed
+                      ? {
+                          background: "transparent",
+                          border: 0,
+                          color: P.INK,
+                          fontFamily: "inherit",
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          padding: "6px 0",
+                        }
+                      : { ...pillButton(P, false), flex: 1 }),
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Pencil size={13} aria-hidden="true" /> Bearbeiten
+                </button>
+              </div>
             </>
           )}
         </Card>
@@ -371,17 +446,25 @@ export default function EmergencyScreen({
           Medikament, Dosis, Notfallset-Ort
         </Mono>
         <textarea
+          ref={autoGrowRef}
           aria-label="Medikament, Dosis, Notfallset-Ort"
           value={plan.notes}
-          onChange={(e) =>
-            onPlanChange({ ...plan, notes: e.target.value.slice(0, EMERGENCY_NOTES_MAX) })
-          }
+          onChange={(e) => {
+            onPlanChange({ ...plan, notes: e.target.value.slice(0, EMERGENCY_NOTES_MAX) });
+            // Same immediate-growth reasoning as the step fields above: the
+            // DOM node already has the new text, so this reflects it on the
+            // same keystroke rather than one render behind.
+            syncTextareaHeight(e.target);
+          }}
           placeholder="z. B. Jext 150 µg, 2×, im blauen Rucksack im Flur …"
           rows={3}
           maxLength={EMERGENCY_NOTES_MAX}
           style={{
             width: "100%",
-            resize: "vertical",
+            // Auto-grow (see autoGrowRef/fieldSizing) replaces manual resize
+            // here too — same reasoning as the step fields above.
+            resize: "none",
+            fieldSizing: "content",
             padding: "12px 14px",
             borderRadius: 12,
             background: P.PAPER,

@@ -37,21 +37,33 @@ describe("EmergencyScreen (F4)", () => {
     expect(link).toHaveAttribute("href", "tel:112");
   });
 
-  it("starts in edit mode with the unconfirmed default template pre-filled", () => {
+  // Befund 07: an unconfirmed plan now shows a calm read view first — the
+  // family reads the whole template and its disclaimer, then explicitly
+  // decides — instead of landing straight in a wall of editable text
+  // fields on first contact with the screen.
+  it("shows an unconfirmed plan as a read view first, not the editor", () => {
     renderScreen(DEFAULT_EMERGENCY_PLAN);
 
+    // The decision is presented, not the fields.
+    expect(screen.getByRole("button", { name: "Unverändert übernehmen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notfallplan bearbeiten" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Schritt 1" })).not.toBeInTheDocument();
+
+    // The template disclaimer belongs to this view, prominently.
     expect(
-      screen.getByRole("button", { name: "Vorlage unverändert übernehmen" }),
+      screen.getByText(/Das ist eine allgemeine Vorlage, keine Anweisung für euren/),
     ).toBeInTheDocument();
+
+    // And the template's own steps are readable as plain text.
     for (const step of DEFAULT_EMERGENCY_STEPS) {
-      expect(screen.getByDisplayValue(step)).toBeInTheDocument();
+      expect(screen.getByText(step)).toBeInTheDocument();
     }
   });
 
   it("accepting the template as-is confirms it without changing the steps", () => {
     const { onPlanChange } = renderScreen(DEFAULT_EMERGENCY_PLAN);
 
-    fireEvent.click(screen.getByRole("button", { name: "Vorlage unverändert übernehmen" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unverändert übernehmen" }));
 
     expect(onPlanChange).toHaveBeenCalledWith({
       ...DEFAULT_EMERGENCY_PLAN,
@@ -59,8 +71,19 @@ describe("EmergencyScreen (F4)", () => {
     });
   });
 
+  it("'Bearbeiten' opens the editor with each step's full, untruncated text as its value", () => {
+    renderScreen(DEFAULT_EMERGENCY_PLAN);
+
+    fireEvent.click(screen.getByRole("button", { name: "Notfallplan bearbeiten" }));
+
+    for (const step of DEFAULT_EMERGENCY_STEPS) {
+      expect(screen.getByDisplayValue(step)).toBeInTheDocument();
+    }
+  });
+
   it("editing a step and saving persists the edit and confirms the plan", () => {
     const { onPlanChange } = renderScreen(DEFAULT_EMERGENCY_PLAN);
+    fireEvent.click(screen.getByRole("button", { name: "Notfallplan bearbeiten" }));
 
     const first = screen.getByRole("textbox", { name: "Schritt 1" });
     fireEvent.change(first, { target: { value: "Angepasster erster Schritt." } });
