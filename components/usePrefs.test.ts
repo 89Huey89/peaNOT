@@ -177,4 +177,190 @@ describe("usePrefs importPrefs (F1)", () => {
 
     expect(result.current.prefs).toEqual(before);
   });
+
+  it("always yields a valid persons state, even from a completely broken import", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() =>
+      // @ts-expect-error deliberately malformed, like a hand-edited backup file
+      result.current.importPrefs({ persons: [{ allergens: "nope" }], activePersonId: "ghost" }),
+    );
+
+    expect(result.current.prefs.persons.length).toBeGreaterThanOrEqual(1);
+    expect(
+      result.current.prefs.persons.some((p) => p.id === result.current.prefs.activePersonId),
+    ).toBe(true);
+    expect(result.current.prefs.persons.every((p) => p.allergens.length > 0)).toBe(true);
+  });
+
+  it("applies a legacy (pre-F) backup's bare selectedAllergens onto the active person", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const activeId = result.current.prefs.activePersonId;
+
+    // An export from before persons existed carries only the flat field —
+    // no `persons` key at all.
+    act(() => result.current.importPrefs({ selectedAllergens: ["milk", "gluten"] }));
+
+    expect(result.current.prefs.selectedAllergens).toEqual(["milk", "gluten"]);
+    const active = result.current.prefs.persons.find((p) => p.id === activeId);
+    expect(active?.allergens).toEqual(["milk", "gluten"]);
+  });
+
+  it("does not touch persons for a modern backup that already carries them", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() =>
+      result.current.importPrefs({
+        persons: [{ id: "x", name: "Anna", allergens: ["soy"] }],
+        activePersonId: "x",
+        selectedAllergens: ["soy"],
+      }),
+    );
+
+    expect(result.current.prefs.persons).toEqual([{ id: "x", name: "Anna", allergens: ["soy"] }]);
+    expect(result.current.prefs.activePersonId).toBe("x");
+    expect(result.current.prefs.selectedAllergens).toEqual(["soy"]);
+  });
+});
+
+describe("usePrefs person management (F)", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("starts with exactly one default person, active", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    expect(result.current.prefs.persons).toHaveLength(1);
+    expect(result.current.prefs.persons[0]!.id).toBe(result.current.prefs.activePersonId);
+    expect(result.current.prefs.selectedAllergens).toEqual(
+      result.current.prefs.persons[0]!.allergens,
+    );
+  });
+
+  it("addPerson seeds the new person from the active one and makes them active", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.addPerson("Ben"));
+
+    expect(result.current.prefs.persons).toHaveLength(2);
+    const ben = result.current.prefs.persons[1]!;
+    expect(ben.name).toBe("Ben");
+    // Geerbt von der bisher aktiven Person, nicht leer: Ben ist ab jetzt
+    // aktiv, und eine leere Liste hieße, dass bis zur ersten Auswahl niemand
+    // entschieden hat, worauf geprüft wird.
+    expect(ben.allergens).toEqual(["peanut"]);
+    expect(result.current.prefs.activePersonId).toBe(ben.id);
+    // selectedAllergens follows the newly active person immediately.
+    expect(result.current.prefs.selectedAllergens).toEqual(["peanut"]);
+  });
+
+  it("never leaves the freshly added, now-active person without allergens", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.addPerson("Ben"));
+
+    expect(result.current.prefs.selectedAllergens.length).toBeGreaterThan(0);
+  });
+
+  it("setActivePerson switches the active person and selectedAllergens follows", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const originalId = result.current.prefs.activePersonId;
+
+    act(() => result.current.addPerson("Ben"));
+    const benId = result.current.prefs.activePersonId;
+
+    act(() => result.current.setActivePerson(originalId));
+    expect(result.current.prefs.activePersonId).toBe(originalId);
+    expect(result.current.prefs.selectedAllergens).toEqual(["peanut"]);
+
+    act(() => result.current.setActivePerson(benId));
+    expect(result.current.prefs.activePersonId).toBe(benId);
+    expect(result.current.prefs.selectedAllergens).toEqual(["peanut"]);
+  });
+
+  it("setPersonAllergens on the active person updates selectedAllergens too", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const activeId = result.current.prefs.activePersonId;
+
+    act(() => result.current.setPersonAllergens(activeId, ["milk", "soy"]));
+
+    expect(result.current.prefs.persons[0]!.allergens).toEqual(["milk", "soy"]);
+    expect(result.current.prefs.selectedAllergens).toEqual(["milk", "soy"]);
+  });
+
+  it("setPersonAllergens on an inactive person leaves selectedAllergens untouched", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const originalId = result.current.prefs.activePersonId;
+
+    act(() => result.current.addPerson("Ben")); // Ben is now active, seeded from the original
+    act(() => result.current.setPersonAllergens(originalId, ["gluten"]));
+
+    const original = result.current.prefs.persons.find((p) => p.id === originalId);
+    expect(original?.allergens).toEqual(["gluten"]);
+    // Ben is active, not the person we just edited — his seeded list stands.
+    expect(result.current.prefs.selectedAllergens).toEqual(["peanut"]);
+  });
+
+  it("renamePerson renames without touching allergens or the active person", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const activeId = result.current.prefs.activePersonId;
+
+    act(() => result.current.renamePerson(activeId, "Timo"));
+
+    expect(result.current.prefs.persons[0]!.name).toBe("Timo");
+    expect(result.current.prefs.persons[0]!.allergens).toEqual(["peanut"]);
+    expect(result.current.prefs.activePersonId).toBe(activeId);
+  });
+
+  it("removePerson removes a non-active person", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const originalId = result.current.prefs.activePersonId;
+
+    act(() => result.current.addPerson("Ben"));
+    expect(result.current.prefs.persons).toHaveLength(2);
+
+    act(() => result.current.removePerson(originalId));
+
+    expect(result.current.prefs.persons).toHaveLength(1);
+    expect(result.current.prefs.persons[0]!.name).toBe("Ben");
+  });
+
+  it("cannot remove the last remaining person", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const onlyId = result.current.prefs.activePersonId;
+
+    act(() => result.current.removePerson(onlyId));
+
+    expect(result.current.prefs.persons).toHaveLength(1);
+    expect(result.current.prefs.persons[0]!.id).toBe(onlyId);
+    expect(result.current.prefs.activePersonId).toBe(onlyId);
+  });
+
+  it("removing the active person falls back to another person, and selectedAllergens follows", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const originalId = result.current.prefs.activePersonId;
+
+    act(() => result.current.addPerson("Ben")); // Ben now active, seeded from the original
+    const benId = result.current.prefs.activePersonId;
+
+    act(() => result.current.removePerson(benId));
+
+    expect(result.current.prefs.persons).toHaveLength(1);
+    expect(result.current.prefs.activePersonId).toBe(originalId);
+    expect(result.current.prefs.selectedAllergens).toEqual(["peanut"]);
+  });
 });

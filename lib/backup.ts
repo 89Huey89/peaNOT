@@ -231,6 +231,21 @@ export function sanitizeHistory(value: unknown): HistoryEntry[] {
 // confirmation in ProfileScreen regardless (see README), so a malformed
 // field just falls back to the existing default the next time usePrefs
 // reads it.
+//
+// F: `persons`/`activePersonId` (see lib/persons.ts) ride along here too,
+// simply because they are just two more fields on Prefs — no special-casing
+// needed on the export side (buildExportPayload passes the whole live Prefs
+// object through) or here on import (this function doesn't validate any
+// individual Prefs field, this one included). An old export written before
+// `persons` existed just lacks the key, same as any other pre-existing Prefs
+// field would; components/usePrefs.ts's importPrefs is what re-derives a
+// valid persons state either way (see its own comment for why a bare legacy
+// `selectedAllergens` in that case still gets applied to the active person,
+// not silently dropped). Since they contain exactly the allergens being
+// checked, they are just as safety-relevant as the rest of Prefs, and so are
+// subject to the exact same rule: this file only *parses* them — nothing is
+// ever applied to the live app until the explicit "Übernehmen" confirmation
+// in ProfileScreen calls importPrefs.
 function sanitizePrefsPartial(value: unknown): Partial<Prefs> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Partial<Prefs>;

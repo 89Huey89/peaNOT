@@ -57,6 +57,29 @@ describe("buildExportPayload", () => {
     expect(payload.notes).toEqual(notes);
     expect(() => new Date(payload.exportedAt).toISOString()).not.toThrow();
   });
+
+  it("carries persons/activePersonId (F) along as part of prefs", () => {
+    const prefs = {
+      ...DEFAULT_PREFS,
+      persons: [
+        { id: "a", name: "Anna", allergens: ["peanut"] },
+        { id: "b", name: "Ben", allergens: ["milk"] },
+      ],
+      activePersonId: "b",
+      selectedAllergens: ["milk"],
+    };
+
+    const payload = buildExportPayload({
+      history: [],
+      prefs,
+      packmatch: {},
+      notes: {},
+      favorites: {},
+    });
+
+    expect(payload.prefs.persons).toEqual(prefs.persons);
+    expect(payload.prefs.activePersonId).toBe("b");
+  });
 });
 
 describe("mergeHistory", () => {
@@ -246,6 +269,24 @@ describe("parseImportFile", () => {
     expect(result.data.notes).toEqual({ "111": { text: "hallo", ts: 1 } });
     expect(result.data.favorites).toEqual({ "444": favorite() });
     expect(result.data.prefs).toEqual({ accent: "berry" });
+  });
+
+  it("imports cleanly a pre-F (Personen) export whose prefs lack persons/activePersonId", () => {
+    // An export written before this feature existed only ever had the flat
+    // `selectedAllergens` on prefs — no `persons`/`activePersonId` keys at
+    // all. This file does no field-level validation on prefs (see its own
+    // comment), so such a file must parse exactly like any other: the
+    // missing keys are just absent from `prefs`, not a rejected import.
+    // components/usePrefs.ts's importPrefs is what derives a valid persons
+    // state from whatever ends up here.
+    const result = parseImportFile(
+      validFile({ prefs: { accent: "berry", selectedAllergens: ["milk", "gluten"] } }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.prefs).toEqual({ accent: "berry", selectedAllergens: ["milk", "gluten"] });
+    expect(result.data.prefs).not.toHaveProperty("persons");
+    expect(result.data.prefs).not.toHaveProperty("activePersonId");
   });
 
   it("falls back to an empty favorites store when the field is missing (a pre-F2 export)", () => {

@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import ProfileScreen from "@/components/screens/ProfileScreen";
 import { DEFAULT_PREFS, type Prefs } from "@/components/usePrefs";
 import type { ImportOutcome } from "@/components/useBackup";
+import type { Person } from "@/lib/persons";
 import { palette } from "@/lib/theme";
 
 function setVibrateSupported(supported: boolean) {
@@ -82,6 +83,220 @@ describe("ProfileScreen allergen picker", () => {
       "aria-checked",
       "false",
     );
+  });
+
+  it("also updates the active person's allergen list, not just selectedAllergens (F)", () => {
+    const { setPref } = renderScreen({ ...DEFAULT_PREFS, selectedAllergens: ["peanut"] });
+
+    fireEvent.click(screen.getByRole("switch", { name: /Soja/ }));
+
+    expect(setPref).toHaveBeenCalledWith("selectedAllergens", ["peanut", "soy"]);
+    expect(setPref).toHaveBeenCalledWith(
+      "persons",
+      expect.arrayContaining([
+        expect.objectContaining({ id: DEFAULT_PREFS.activePersonId, allergens: ["peanut", "soy"] }),
+      ]),
+    );
+  });
+
+  it("titles the section 'Meine Allergene' for the default 'Ich' person", () => {
+    renderScreen(DEFAULT_PREFS);
+    expect(screen.getByText("Meine Allergene")).toBeInTheDocument();
+  });
+
+  it("titles the section after the active person once renamed/multi-person", () => {
+    const persons: Person[] = [
+      { id: "a", name: "Anna", allergens: ["peanut"] },
+      { id: "b", name: "Ben", allergens: ["milk"] },
+    ];
+    renderScreen({
+      ...DEFAULT_PREFS,
+      persons,
+      activePersonId: "a",
+      selectedAllergens: ["peanut"],
+    });
+
+    expect(screen.getByText("Allergene von Anna")).toBeInTheDocument();
+    expect(screen.getByText(/Gilt nur für Anna\./)).toBeInTheDocument();
+  });
+});
+
+describe("ProfileScreen Personen (F)", () => {
+  function withPersons(persons: Person[], activePersonId: string): Prefs {
+    const active = persons.find((p) => p.id === activePersonId) ?? persons[0]!;
+    return { ...DEFAULT_PREFS, persons, activePersonId, selectedAllergens: active.allergens };
+  }
+
+  it("stays minimal for a single-person household — just an add button, no list", () => {
+    renderScreen(DEFAULT_PREFS);
+
+    expect(screen.getByText("Personen")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Person hinzufügen" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /wechseln/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /entfernen/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /umbenennen/ })).not.toBeInTheDocument();
+  });
+
+  it("lists every person once a second one exists, marking the active one", () => {
+    const prefs = withPersons(
+      [
+        { id: "a", name: "Anna", allergens: ["peanut"] },
+        { id: "b", name: "Ben", allergens: ["milk"] },
+      ],
+      "a",
+    );
+    renderScreen(prefs);
+
+    expect(screen.getByRole("button", { name: "Zu Anna wechseln" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Zu Ben wechseln" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    // Scoped to each person's own row — "Erdnuss"/"Milch" also appear as the
+    // (unrelated) allergen-toggle switch labels further down the screen.
+    expect(
+      within(screen.getByRole("button", { name: "Zu Anna wechseln" })).getByText("Erdnuss"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("button", { name: "Zu Ben wechseln" })).getByText("Milch"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a 'no allergens selected' summary for a freshly added person", () => {
+    const prefs = withPersons(
+      [
+        { id: "a", name: "Anna", allergens: ["peanut"] },
+        { id: "b", name: "Ben", allergens: [] },
+      ],
+      "a",
+    );
+    renderScreen(prefs);
+
+    expect(screen.getByText("Keine Allergene ausgewählt")).toBeInTheDocument();
+  });
+
+  it("switching the active person updates persons/activePersonId/selectedAllergens together", () => {
+    const prefs = withPersons(
+      [
+        { id: "a", name: "Anna", allergens: ["peanut"] },
+        { id: "b", name: "Ben", allergens: ["milk"] },
+      ],
+      "a",
+    );
+    const { setPref } = renderScreen(prefs);
+
+    fireEvent.click(screen.getByRole("button", { name: "Zu Ben wechseln" }));
+
+    expect(setPref).toHaveBeenCalledWith("activePersonId", "b");
+    expect(setPref).toHaveBeenCalledWith("selectedAllergens", ["milk"]);
+    expect(setPref).toHaveBeenCalledWith("persons", prefs.persons);
+  });
+
+  it("adds a new person with a numbered default name, seeded allergens, and makes them active", () => {
+    const { setPref } = renderScreen(DEFAULT_PREFS);
+
+    fireEvent.click(screen.getByRole("button", { name: "Person hinzufügen" }));
+
+    const personsCall = setPref.mock.calls.find(([key]) => key === "persons");
+    expect(personsCall).toBeTruthy();
+    const nextPersons = personsCall![1] as Person[];
+    expect(nextPersons).toHaveLength(2);
+    expect(nextPersons[1]).toMatchObject({ name: "Person 2", allergens: ["peanut"] });
+
+    expect(setPref).toHaveBeenCalledWith("activePersonId", nextPersons[1]!.id);
+    expect(setPref).toHaveBeenCalledWith("selectedAllergens", ["peanut"]);
+  });
+
+  it("renames a person via the inline editor without touching allergens/active id", () => {
+    const prefs = withPersons(
+      [
+        { id: "a", name: "Anna", allergens: ["peanut"] },
+        { id: "b", name: "Ben", allergens: ["milk"] },
+      ],
+      "a",
+    );
+    const { setPref } = renderScreen(prefs);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ben umbenennen" }));
+    const input = screen.getByRole("textbox", { name: "Name von Ben" });
+    fireEvent.change(input, { target: { value: "Benjamin" } });
+    fireEvent.click(screen.getByRole("button", { name: "Umbenennen speichern" }));
+
+    expect(setPref).toHaveBeenCalledWith("persons", [
+      { id: "a", name: "Anna", allergens: ["peanut"] },
+      { id: "b", name: "Benjamin", allergens: ["milk"] },
+    ]);
+    // Renaming alone never touches which person is active or what's checked.
+    expect(setPref).not.toHaveBeenCalledWith("activePersonId", expect.anything());
+    expect(setPref).not.toHaveBeenCalledWith("selectedAllergens", expect.anything());
+  });
+
+  it("cancelling the inline rename discards the draft", () => {
+    const prefs = withPersons(
+      [
+        { id: "a", name: "Anna", allergens: ["peanut"] },
+        { id: "b", name: "Ben", allergens: ["milk"] },
+      ],
+      "a",
+    );
+    const { setPref } = renderScreen(prefs);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ben umbenennen" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Name von Ben" }), {
+      target: { value: "Whatever" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Umbenennen abbrechen" }));
+
+    expect(setPref).not.toHaveBeenCalled();
+    expect(screen.getByText("Ben")).toBeInTheDocument();
+  });
+
+  it("removes a person after confirming, updating persons/activePersonId/selectedAllergens", () => {
+    const prefs = withPersons(
+      [
+        { id: "a", name: "Anna", allergens: ["peanut"] },
+        { id: "b", name: "Ben", allergens: ["milk"] },
+      ],
+      "b",
+    );
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { setPref } = renderScreen(prefs);
+
+    fireEvent.click(screen.getByRole("button", { name: "Anna entfernen" }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(setPref).toHaveBeenCalledWith("persons", [{ id: "b", name: "Ben", allergens: ["milk"] }]);
+    // Ben was already active and stays active — removing a non-active person
+    // never reassigns who's active.
+    expect(setPref).toHaveBeenCalledWith("activePersonId", "b");
+    expect(setPref).toHaveBeenCalledWith("selectedAllergens", ["milk"]);
+    confirmSpy.mockRestore();
+  });
+
+  it("does nothing when the removal confirmation is declined", () => {
+    const prefs = withPersons(
+      [
+        { id: "a", name: "Anna", allergens: ["peanut"] },
+        { id: "b", name: "Ben", allergens: ["milk"] },
+      ],
+      "a",
+    );
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { setPref } = renderScreen(prefs);
+
+    fireEvent.click(screen.getByRole("button", { name: "Ben entfernen" }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(setPref).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("never offers a delete button for the last remaining person", () => {
+    renderScreen(DEFAULT_PREFS);
+    expect(screen.queryByRole("button", { name: /entfernen/ })).not.toBeInTheDocument();
   });
 });
 
