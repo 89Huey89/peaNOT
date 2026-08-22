@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { Palette } from "@/lib/theme";
 import type { ProductResult } from "@/lib/types";
 import { VERDICT, resolveVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/verdict";
@@ -33,6 +33,23 @@ import {
 
 function shortEan(ean: string): string {
   return ean.length > 8 ? `${ean.slice(0, 4)}…${ean.slice(-4)}` : ean;
+}
+
+/**
+ * F10: whether the product title likely needs the "tap to expand" control.
+ * Not a real layout measurement (there is no DOM to measure before first
+ * paint, and jsdom under test has no layout at all) — a character-count
+ * heuristic instead, in the same spirit as stampWordSize/stampSubSize in
+ * components/ui.tsx. The title column is roughly 220-240px wide next to the
+ * 56px photo, in Fraunces 700 at ~20px — call it ~18 characters per line, so
+ * three lines hold ~54 comfortably. Erring low (showing the control a little
+ * more often than strictly necessary) is the safe direction: the alternative
+ * — clamping text with no way to read the rest — is the actual bug this
+ * fixes, so a false positive here just costs an unneeded tap affordance,
+ * never a hidden product name.
+ */
+function titleMayOverflow(name: string): boolean {
+  return name.length > 50;
 }
 
 function nowHHMM(): string {
@@ -308,6 +325,11 @@ export default function ResultScreen({
   // to read on every KEINE_DATEN, so it shouldn't push the retry button down
   // for everyone.
   const [checklistOpen, setChecklistOpen] = useState(false);
+  // F10: a long product name is clamped to 3 lines by default (see
+  // titleMayOverflow) so it can never push the stamp below the fold — a tap
+  // reveals the rest. Collapsed again whenever a new result comes in, so an
+  // expanded long name from the previous product doesn't leak into the next.
+  const [nameExpanded, setNameExpanded] = useState(false);
   // F6: brief "kopiert" confirmation for the clipboard fallback (no native
   // share sheet available) — see handleShare below.
   const [shareNotice, setShareNotice] = useState(false);
@@ -364,7 +386,26 @@ export default function ResultScreen({
   // Branch the "no verdict" card by *why* (network/server failure vs. a real
   // not-found/no-data) — see unknownCardCopy for the reasoning.
   const unknownCard = isUnknown && !mismatch ? unknownCardCopy(result, profiles) : null;
-  const headlineText = unknownCard?.network ? "Gerade keine Verbindung." : copy.headline;
+
+  // Warn-only recall comparison: matches add a card, everything else stays a
+  // quiet status line — "no match" must never read as "no recall exists".
+  const recallMatches =
+    result.recall?.status === "ok" ? result.recall.matches : [];
+  // A recall hit qualifies an otherwise-clear read: "no match in the data" is
+  // not the same claim as "safe" once an official recall notice might apply
+  // to the same product. trace/danger/unknown already read as a warning on
+  // their own, so this only softens safe/partial — the two verdicts whose
+  // stock headline and kicker would otherwise sound like reassurance right
+  // above a red recall card. The verdict itself (copy.title, copy.label,
+  // history, share text) is untouched — only this top headline and the mono
+  // kicker beside the stamp change their wording, and only the stamp changes
+  // color (see the Stamp colorOverride below).
+  const recallQualifiesVerdict = recallMatches.length > 0 && (isSafe || isPartial);
+  const headlineText = unknownCard?.network
+    ? "Gerade keine Verbindung."
+    : recallQualifiesVerdict
+      ? "Kein Treffer in den Daten — aber ein Rückruf könnte passen."
+      : copy.headline;
 
   // F6: mirrors exactly what's already on screen — the verdict label plus
   // its detail line, which for "partial" already carries the caveat wording
@@ -377,11 +418,6 @@ export default function ResultScreen({
     label: copy.label,
     detail: `${detailText}${strictTraceHit ? " Im Strikt-Modus wie ein Treffer behandelt." : ""}`,
   });
-
-  // Warn-only recall comparison: matches add a card, everything else stays a
-  // quiet status line — "no match" must never read as "no recall exists".
-  const recallMatches =
-    result.recall?.status === "ok" ? result.recall.matches : [];
 
   // A green/amber result is only as good as the record behind it — flag a
   // record that has not been touched in a long time so the packet in hand
@@ -432,6 +468,7 @@ export default function ResultScreen({
         : "";
     setAnnounce(`${worsenNote}${copy.title} ${detailText}${recallNote}`);
     setImgFailed(false);
+    setNameExpanded(false);
   }, [result, copy.title, copy.label, detailText, recallMatches.length, worsenedFrom]);
 
   // Alert the user on a hit (and on traces when strict mode is on).
@@ -690,7 +727,11 @@ export default function ResultScreen({
                   height: 56,
                   borderRadius: 10,
                   objectFit: "cover",
-                  background: "#ece1c8",
+                  // F12: PAPER, not a hardcoded cream — that literal stayed
+                  // bright in dark mode and clashed with the card around it.
+                  // This is just the letterbox behind a loading/transparent
+                  // photo, so it should read as "card surface", not a color.
+                  background: P.PAPER,
                   border: `1px solid ${P.INK}22`,
                   flexShrink: 0,
                 }}
@@ -701,126 +742,106 @@ export default function ResultScreen({
                   width: 56,
                   height: 56,
                   borderRadius: 10,
-                  background: `repeating-linear-gradient(45deg, ${P.INK}10 0 6px, transparent 6px 12px), #ece1c8`,
+                  // F12: same PAPER-derived fill as above — in dark mode the
+                  // old hardcoded cream sat almost exactly on top of P.INK
+                  // (dark mode's INK *is* a light cream, for text), so the
+                  // "foto" label all but disappeared into its own background.
+                  background: `repeating-linear-gradient(45deg, ${P.INK}10 0 6px, transparent 6px 12px), ${P.PAPER}`,
                   border: `1px solid ${P.INK}22`,
                   display: "grid",
                   placeItems: "center",
                   flexShrink: 0,
                 }}
               >
-                <Mono style={{ opacity: 0.7 }}>foto</Mono>
+                <Mono style={{ opacity: 0.7, color: P.INK }}>foto</Mono>
               </div>
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <Mono style={{ opacity: 0.7 }}>
+              <Mono
+                style={{
+                  opacity: 0.7,
+                  // F10: the brand/ean line is a single status line, not a
+                  // headline — clamp it to one row so a long brand name can't
+                  // wrap and push the title (and with it, the stamp) down.
+                  display: "-webkit-box",
+                  WebkitLineClamp: 1,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                }}
+              >
                 {result.brand ?? "—"} · ean {shortEan(result.barcode)}
               </Mono>
-              <div
-                style={{
+              {(() => {
+                const productName = result.productName ?? "Unbekanntes Produkt";
+                const titleStyle: CSSProperties = {
                   fontFamily: "'Fraunces', serif",
                   fontWeight: 700,
                   fontSize: "1.25em",
                   lineHeight: 1.1,
                   marginTop: 2,
-                }}
-              >
-                {result.productName ?? "Unbekanntes Produkt"}
-              </div>
+                  textAlign: "left",
+                };
+                // F10: a realistic long name ("Bio-Vollkorn-Dinkel-Knusper-
+                // Müsli mit Mandeln, Cranberries und Kürbiskernen,
+                // Familienpackung 750 g") can fill half the screen and push
+                // the stamp below the fold. Clamp to 3 lines and only offer
+                // the tap-to-expand affordance when the name is actually
+                // long enough to need it — a short name shows plain text,
+                // no button, no aria-expanded, nothing to trip over.
+                if (!titleMayOverflow(productName)) {
+                  return <div style={titleStyle}>{productName}</div>;
+                }
+                return (
+                  <button
+                    type="button"
+                    className="tap"
+                    onClick={() => setNameExpanded((v) => !v)}
+                    aria-expanded={nameExpanded}
+                    aria-label={
+                      nameExpanded
+                        ? `Produktname einklappen: ${productName}`
+                        : `Vollständigen Produktnamen anzeigen: ${productName}`
+                    }
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      minHeight: 44,
+                      padding: 0,
+                      margin: 0,
+                      background: "transparent",
+                      border: 0,
+                      color: "inherit",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        ...titleStyle,
+                        display: nameExpanded ? "block" : "-webkit-box",
+                        WebkitLineClamp: nameExpanded ? undefined : 3,
+                        WebkitBoxOrient: "vertical",
+                        overflow: nameExpanded ? "visible" : "hidden",
+                      }}
+                    >
+                      {productName}
+                    </span>
+                  </button>
+                );
+              })()}
             </div>
           </div>
 
-          <div
-            style={{
-              marginTop: 16,
-              padding: "18px 14px 16px",
-              borderRadius: 14,
-              background: accentBg,
-              border: `2px ${accentBorderStyle} ${accentBd}`,
-              position: "relative",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                opacity: 0.06,
-                background: `repeating-linear-gradient(135deg, ${accentBd} 0 8px, transparent 8px 18px)`,
-              }}
-            />
-            <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
-              {isUnknown ? (
-                <div
-                  style={{
-                    width: 88,
-                    height: 88,
-                    borderRadius: 99,
-                    // Dashed (vs. the hit stamp's solid double border) keeps
-                    // this red warning visually distinct from a real JA hit,
-                    // fail-safe framing per README even though the color now
-                    // matches.
-                    border: `2px dashed ${P.RED}`,
-                    display: "grid",
-                    placeItems: "center",
-                    color: P.RED,
-                    transform: "rotate(-8deg)",
-                    flexShrink: 0,
-                  }}
-                >
-                  <Mono style={{ fontSize: 9 }}>?</Mono>
-                </div>
-              ) : (
-                <Stamp verdict={verdict} P={P} colorOverride={strictTraceHit ? P.RED : undefined} />
-              )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <Mono style={{ color: fg }}>{copy.tag}</Mono>
-                  {strictTraceHit ? (
-                    <Chip tone="bad" P={P}>
-                      Strikt: wie Treffer
-                    </Chip>
-                  ) : null}
-                </div>
-                <div
-                  style={{
-                    fontFamily: "'Fraunces', serif",
-                    fontWeight: 800,
-                    // The stamp keeps its 88px, so on narrow phones the verdict
-                    // has to give: full size from ~390px up, smaller below.
-                    fontSize: "clamp(1.25em, 6.7vw, 1.625em)",
-                    color: fg,
-                    lineHeight: 1.0,
-                    marginTop: 3,
-                    textWrap: "balance",
-                    // Long allergen labels ("Schalenfrüchte") must break rather
-                    // than push past the card on narrow phones — hyphenated
-                    // where German allows it, hard-broken only as a last resort.
-                    hyphens: "auto",
-                    overflowWrap: "break-word",
-                  }}
-                >
-                  {copy.title}
-                </div>
-                <div
-                  style={{
-                    fontSize: "0.78em",
-                    marginTop: 6,
-                    opacity: isUnknown ? 0.92 : 0.78,
-                    lineHeight: 1.35,
-                    color: isUnknown ? P.RED : undefined,
-                  }}
-                >
-                  {detailText}
-                  {strictTraceHit ? " Im Strikt-Modus wie ein Treffer behandelt." : ""}
-                </div>
-              </div>
-            </div>
-          </div>
-
+          {/* A recall notice must be seen before any all-clear stamp: on a
+              phone screen the stamp alone can fill the viewport, so a recall
+              rendered below it (as it used to be) was invisible until the
+              user scrolled past a green "safe" seal. Rendering it first means
+              the worst case — an official recall on an otherwise clean
+              record — is never hidden behind a reassuring visual. */}
           {recallMatches.length > 0 ? (
             <div
               style={{
-                marginTop: 12,
+                marginTop: 16,
                 padding: "14px 14px 12px",
                 borderRadius: 12,
                 background: `${P.RED}0D`,
@@ -891,6 +912,102 @@ export default function ResultScreen({
             </div>
           ) : null}
 
+          <div
+            style={{
+              marginTop: recallMatches.length > 0 ? 12 : 16,
+              padding: "18px 14px 16px",
+              borderRadius: 14,
+              background: accentBg,
+              border: `2px ${accentBorderStyle} ${accentBd}`,
+              position: "relative",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                opacity: 0.06,
+                background: `repeating-linear-gradient(135deg, ${accentBd} 0 8px, transparent 8px 18px)`,
+              }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
+              {isUnknown ? (
+                <div
+                  style={{
+                    width: 88,
+                    height: 88,
+                    borderRadius: 99,
+                    // Dashed (vs. the hit stamp's solid double border) keeps
+                    // this red warning visually distinct from a real JA hit,
+                    // fail-safe framing per README even though the color now
+                    // matches.
+                    border: `2px dashed ${P.RED}`,
+                    display: "grid",
+                    placeItems: "center",
+                    color: P.RED,
+                    transform: "rotate(-8deg)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Mono style={{ fontSize: 9 }}>?</Mono>
+                </div>
+              ) : (
+                <Stamp
+                  verdict={verdict}
+                  P={P}
+                  colorOverride={
+                    strictTraceHit ? P.RED : recallQualifiesVerdict ? P.AMBER : undefined
+                  }
+                />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <Mono style={{ color: fg }}>
+                    {recallQualifiesVerdict ? "kein treffer · rückruf prüfen" : copy.tag}
+                  </Mono>
+                  {strictTraceHit ? (
+                    <Chip tone="bad" P={P}>
+                      Strikt: wie Treffer
+                    </Chip>
+                  ) : null}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "'Fraunces', serif",
+                    fontWeight: 800,
+                    // The stamp keeps its 88px, so on narrow phones the verdict
+                    // has to give: full size from ~390px up, smaller below.
+                    fontSize: "clamp(1.25em, 6.7vw, 1.625em)",
+                    color: fg,
+                    lineHeight: 1.0,
+                    marginTop: 3,
+                    textWrap: "balance",
+                    // Long allergen labels ("Schalenfrüchte") must break rather
+                    // than push past the card on narrow phones — hyphenated
+                    // where German allows it, hard-broken only as a last resort.
+                    hyphens: "auto",
+                    overflowWrap: "break-word",
+                  }}
+                >
+                  {copy.title}
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.78em",
+                    marginTop: 6,
+                    opacity: isUnknown ? 0.92 : 0.78,
+                    lineHeight: 1.35,
+                    color: isUnknown ? P.RED : undefined,
+                  }}
+                >
+                  {detailText}
+                  {strictTraceHit ? " Im Strikt-Modus wie ein Treffer behandelt." : ""}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {identityOpen && answer === null ? (
             <div
               style={{
@@ -934,7 +1051,11 @@ export default function ResultScreen({
                     objectFit: "contain",
                     borderRadius: 10,
                     marginTop: 10,
-                    background: "#ece1c8",
+                    // F12: same fix as the header placeholder — objectFit
+                    // "contain" can letterbox this image, and the old
+                    // hardcoded cream showed through that letterbox as a
+                    // bright block in dark mode.
+                    background: P.PAPER,
                     border: `1px solid ${P.INK}22`,
                   }}
                 />
