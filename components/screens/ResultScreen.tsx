@@ -367,9 +367,26 @@ export default function ResultScreen({
   // `fg` colors text (the mono kicker at ~11px and the verdict title), so the
   // amber verdicts take AMBER_TEXT — fill-grade AMBER stays below 4.5:1 even on
   // the card's own tint (see lib/theme.ts). The tint and frame keep AMBER.
+  // Warn-only recall comparison: matches add a card, everything else stays a
+  // quiet status line — "no match" must never read as "no recall exists".
+  const recallMatches =
+    result.recall?.status === "ok" ? result.recall.matches : [];
+  // A recall hit qualifies an otherwise-clear read: "no match in the data" is
+  // not the same claim as "safe" once an official recall notice might apply
+  // to the same product. trace/danger/unknown already read as a warning on
+  // their own, so this only softens safe/partial — the two verdicts whose
+  // stock headline, kicker and green card would otherwise sound like
+  // reassurance right above a red recall card. It has to reach every part of
+  // that card, not just the stamp glyph: a green frame around an amber stamp
+  // still reads "safe" at arm's length, which is exactly the glance this is
+  // meant to interrupt. The verdict itself (copy.title, copy.label, history
+  // entry, share text, aria-live announcement) stays untouched — this is
+  // presentation only, the comparison remains warn-only.
+  const recallQualifiesVerdict = recallMatches.length > 0 && (isSafe || isPartial);
+
   const fg = strictTraceHit || isUnknown
     ? P.RED
-    : isTrace || isPartial
+    : isTrace || isPartial || recallQualifiesVerdict
       ? P.AMBER_TEXT
       : verdictColor(verdict, P);
 
@@ -387,20 +404,6 @@ export default function ResultScreen({
   // not-found/no-data) — see unknownCardCopy for the reasoning.
   const unknownCard = isUnknown && !mismatch ? unknownCardCopy(result, profiles) : null;
 
-  // Warn-only recall comparison: matches add a card, everything else stays a
-  // quiet status line — "no match" must never read as "no recall exists".
-  const recallMatches =
-    result.recall?.status === "ok" ? result.recall.matches : [];
-  // A recall hit qualifies an otherwise-clear read: "no match in the data" is
-  // not the same claim as "safe" once an official recall notice might apply
-  // to the same product. trace/danger/unknown already read as a warning on
-  // their own, so this only softens safe/partial — the two verdicts whose
-  // stock headline and kicker would otherwise sound like reassurance right
-  // above a red recall card. The verdict itself (copy.title, copy.label,
-  // history, share text) is untouched — only this top headline and the mono
-  // kicker beside the stamp change their wording, and only the stamp changes
-  // color (see the Stamp colorOverride below).
-  const recallQualifiesVerdict = recallMatches.length > 0 && (isSafe || isPartial);
   const headlineText = unknownCard?.network
     ? "Gerade keine Verbindung."
     : recallQualifiesVerdict
@@ -478,24 +481,30 @@ export default function ResultScreen({
     if (sound) beep();
   }, [alarm, haptic, sound]);
 
-  const accentBg = isSafe
-    ? `${P.GREEN}10`
-    : isDanger || strictTraceHit
-      ? `${P.RED}10`
-      : isTrace || isPartial
-        ? `${P.AMBER}12`
-        : isUnknown
-          ? `${P.RED}09`
-          : `${P.INK}06`;
-  const accentBd = isSafe
-    ? P.GREEN
-    : isDanger || strictTraceHit
-      ? P.RED
-      : isTrace || isPartial
-        ? P.AMBER
-        : isUnknown
-          ? P.RED
-          : `${P.INK}33`;
+  // recallQualifiesVerdict is checked before isSafe so a clear read with a
+  // matching recall gets the amber card, not the green one.
+  const accentBg = recallQualifiesVerdict
+    ? `${P.AMBER}12`
+    : isSafe
+      ? `${P.GREEN}10`
+      : isDanger || strictTraceHit
+        ? `${P.RED}10`
+        : isTrace || isPartial
+          ? `${P.AMBER}12`
+          : isUnknown
+            ? `${P.RED}09`
+            : `${P.INK}06`;
+  const accentBd = recallQualifiesVerdict
+    ? P.AMBER
+    : isSafe
+      ? P.GREEN
+      : isDanger || strictTraceHit
+        ? P.RED
+        : isTrace || isPartial
+          ? P.AMBER
+          : isUnknown
+            ? P.RED
+            : `${P.INK}33`;
   // Unknown keeps a dashed frame (vs. everyone else's solid) so it stays
   // visually distinct from a real hit even though both are red now.
   const accentBorderStyle = isUnknown ? "dashed" : "solid";
@@ -913,6 +922,7 @@ export default function ResultScreen({
           ) : null}
 
           <div
+            data-verdict-card=""
             style={{
               marginTop: recallMatches.length > 0 ? 12 : 16,
               padding: "18px 14px 16px",

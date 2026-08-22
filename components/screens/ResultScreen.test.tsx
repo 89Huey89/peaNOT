@@ -252,6 +252,56 @@ describe("ResultScreen recall comparison", () => {
     expect(screen.getByText("Keine Erdnuss.")).toBeInTheDocument();
   });
 
+  // The wording alone is not enough: at arm's length in a shop the card reads
+  // as a color long before it reads as a sentence. A green frame around an
+  // amber stamp still says "safe", so the whole card has to leave green.
+  it("drops the green card entirely on a safe verdict with a recall hit", () => {
+    renderResult({
+      barcode: "4011200296908",
+      productName: "Keks",
+      brand: "ACME",
+      status: "NEIN",
+      ingredients: "Mehl",
+      recall: {
+        status: "ok",
+        matches: [
+          {
+            title: "Keks, 200 g",
+            link: "https://www.lebensmittelwarnung.de/y",
+            publishedDate: 1_763_000_000_000,
+          },
+        ],
+      },
+    });
+
+    const card = document.querySelector("[data-verdict-card]") as HTMLElement | null;
+    expect(card).not.toBeNull();
+    // PAL_LIGHT.GREEN / AMBER, as jsdom serializes them — asserted on the
+    // concrete values so a palette edit that silently re-greens this card
+    // fails here instead of on a shelf.
+    expect(card!.style.border).not.toContain("rgb(31, 107, 58)");
+    expect(card!.style.border).toContain("rgb(180, 107, 4)");
+
+    // Same for the kicker text beside the stamp: AMBER_TEXT, never green.
+    const kicker = screen.getByText("kein treffer · rückruf prüfen");
+    expect(kicker).toHaveStyle({ color: "rgb(138, 86, 6)" });
+  });
+
+  it("keeps the green card on a clean result with no recall match", () => {
+    renderResult({
+      barcode: "4011200296908",
+      productName: "Keks",
+      brand: "ACME",
+      status: "NEIN",
+      ingredients: "Mehl",
+      recall: { status: "ok", matches: [] },
+    });
+
+    const card = document.querySelector("[data-verdict-card]") as HTMLElement | null;
+    expect(card).not.toBeNull();
+    expect(card!.style.border).toContain("rgb(31, 107, 58)");
+  });
+
   it("keeps the original order and wording when no recall matches", () => {
     renderResult({
       barcode: "4011200296908",
