@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import type { Palette } from "@/lib/theme";
 import type { ProductResult } from "@/lib/types";
 import { VERDICT, resolveVerdict, verdictColor, verdictCopy, verdictGlyph } from "@/lib/verdict";
@@ -10,6 +17,7 @@ import { offProductUrl } from "@/lib/off/link";
 import { usePackMatch } from "@/components/usePackMatch";
 import { useNote } from "@/components/useNote";
 import { NOTE_MAX_LENGTH } from "@/lib/notes";
+import { usePhoto } from "@/components/usePhoto";
 import { getProfiles, type AllergenProfile } from "@/lib/allergens/profile";
 import { buildAllergenChecklist, type AllergenChecklist } from "@/lib/allergens/checklist";
 import { beep, vibrate } from "@/lib/feedback";
@@ -21,12 +29,14 @@ import {
   AlertTriangle,
   ArrowRight,
   BookOpen,
+  Camera,
   ChevronDown,
   ExternalLink,
   Pencil,
   RotateCcw,
   Share,
   Star,
+  Trash2,
   WifiOff,
   X,
 } from "lucide-react";
@@ -278,6 +288,239 @@ function AllergenChecklistCard({
   );
 }
 
+/**
+ * F-E: the user's own photo of a barcode's ingredients list (see
+ * components/usePhoto.ts / lib/photos.ts). Shown for every product — a
+ * green result can be worth documenting too, e.g. before a recipe change —
+ * but earns its keep most at KEINE_DATEN or a reported pack mismatch, where
+ * "go read the label yourself" is otherwise the end of the road, every
+ * single time the same code is scanned again.
+ *
+ * Purely a memory aid: no OCR, no verdict of its own — this card only ever
+ * displays what the user themselves photographed and when they did it (see
+ * lib/photos.ts's header comment for the full reasoning). The age warning
+ * below is the honesty half of that: a photo, unlike this card's wording,
+ * cannot know whether the recipe behind it has changed since.
+ */
+function IngredientPhotoCard({
+  P,
+  productName,
+  photoUrl,
+  takenAt,
+  stale,
+  saving,
+  error,
+  onCapture,
+  onRemove,
+}: {
+  P: Palette;
+  productName: string | null;
+  photoUrl: string | null;
+  takenAt: number | null;
+  stale: boolean;
+  saving: boolean;
+  error: string | null;
+  onCapture: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function pickFile() {
+    inputRef.current?.click();
+  }
+
+  function handleChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Clear immediately so picking the very same file again still fires a
+    // change event (iOS otherwise treats an unchanged value as a no-op).
+    e.target.value = "";
+    if (file) onCapture(file);
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: "12px 14px",
+        borderRadius: 10,
+        background: `${P.INK}05`,
+        border: `1px dashed ${P.INK}33`,
+      }}
+    >
+      {/* capture="environment" is what makes iOS Safari open the camera
+          directly instead of the photo library picker. Screen-reader-only
+          (same sr-only class as the backup-import file input in
+          ProfileScreen.tsx), not display:none — some browsers won't let a
+          fully hidden file input be triggered at all. The visible buttons
+          below open it via the ref. */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleChange}
+        className="sr-only"
+        aria-label="Foto der Zutatenliste aufnehmen"
+      />
+
+      <Mono style={{ opacity: 0.6 }}>foto · zutatenliste</Mono>
+
+      {photoUrl ? (
+        <>
+          <img
+            src={photoUrl}
+            alt={
+              productName
+                ? `Selbst aufgenommenes Foto der Zutatenliste von ${productName}`
+                : "Selbst aufgenommenes Foto der Zutatenliste"
+            }
+            style={{
+              display: "block",
+              width: "100%",
+              maxHeight: 320,
+              objectFit: "contain",
+              borderRadius: 10,
+              marginTop: 8,
+              // Same PAPER-derived letterbox fill as the header/pack-match
+              // photos above (F12) — a hardcoded color would clash in dark
+              // mode whenever objectFit leaves a visible border.
+              background: P.PAPER,
+              border: `1px solid ${P.INK}22`,
+            }}
+          />
+          {takenAt ? (
+            <Mono style={{ opacity: 0.65, display: "block", marginTop: 6 }}>
+              aufgenommen · {formatRelative(takenAt)}
+            </Mono>
+          ) : null}
+          {stale ? (
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 12.5,
+                fontWeight: 700,
+                lineHeight: 1.4,
+                color: P.AMBER_TEXT,
+              }}
+            >
+              Dieses Foto ist schon einige Monate alt — Rezeptur oder Packung können sich
+              seither geändert haben. Im Zweifel zählt die aktuelle Packung, nicht das Foto.
+            </div>
+          ) : (
+            <p style={{ margin: "6px 0 0", fontSize: 12, opacity: 0.6, lineHeight: 1.4 }}>
+              Nur eine Erinnerung ans nächste Mal — ersetzt nie den Blick auf die aktuelle
+              Packung.
+            </p>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button
+              type="button"
+              className="tap hit44"
+              onClick={pickFile}
+              disabled={saving}
+              style={{
+                flex: 1,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                background: "transparent",
+                color: P.INK,
+                border: `1px solid ${P.INK}44`,
+                borderRadius: 99,
+                padding: "9px 12px",
+                fontWeight: 600,
+                fontSize: 12.5,
+                fontFamily: "inherit",
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              <Camera size={14} aria-hidden="true" />
+              Neu aufnehmen
+            </button>
+            <button
+              type="button"
+              className="tap hit44"
+              onClick={() => {
+                if (window.confirm("Foto der Zutatenliste wirklich löschen?")) onRemove();
+              }}
+              disabled={saving}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: "transparent",
+                color: P.RED,
+                border: `1px solid ${P.RED}55`,
+                borderRadius: 99,
+                padding: "9px 12px",
+                fontWeight: 600,
+                fontSize: 12.5,
+                fontFamily: "inherit",
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              Löschen
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p style={{ margin: "5px 0 10px", fontSize: 12, opacity: 0.6, lineHeight: 1.4 }}>
+            Einmal die Zutatenliste fotografieren, statt sie beim nächsten Einkauf wieder von
+            vorn zu lesen. Ersetzt nie den Blick auf die aktuelle Packung.
+          </p>
+          <button
+            type="button"
+            className="tap hit44"
+            onClick={pickFile}
+            disabled={saving}
+            style={{
+              width: "100%",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              background: "transparent",
+              color: P.INK,
+              border: `1.5px solid ${P.ACCENT}`,
+              borderRadius: 99,
+              padding: "11px 12px",
+              fontWeight: 700,
+              fontSize: 13.5,
+              fontFamily: "inherit",
+              opacity: saving ? 0.6 : 1,
+            }}
+          >
+            <Camera size={15} aria-hidden="true" />
+            Zutatenliste fotografieren
+          </button>
+        </>
+      )}
+
+      {/* The resize step (createImageBitmap + canvas) is a visible beat on a
+          multi-MB iPhone photo — say so rather than leaving the screen
+          looking stuck. role="status" so it's announced without stealing
+          focus the way the verdict's assertive live region does. */}
+      {saving ? (
+        <div role="status">
+          <Mono style={{ opacity: 0.6, display: "block", marginTop: 8 }}>wird verkleinert…</Mono>
+        </div>
+      ) : null}
+
+      {error ? (
+        <div
+          role="alert"
+          style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: P.RED, lineHeight: 1.4 }}
+        >
+          {error}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ResultScreen({
   P,
   result,
@@ -319,6 +562,18 @@ export default function ResultScreen({
   // F5: a family-only note per product — purely informational, read nowhere
   // that resolves a verdict (see lib/notes.ts).
   const { note, notedAt, saveNote } = useNote(result.barcode);
+  // F-E: the user's own photo of this barcode's ingredients list — see
+  // components/usePhoto.ts / lib/photos.ts. Self-contained like useNote
+  // above: it reads its own IndexedDB state and never feeds a verdict.
+  const {
+    photoUrl,
+    takenAt: photoTakenAt,
+    stale: photoStale,
+    saving: photoSaving,
+    error: photoError,
+    capture: capturePhoto,
+    remove: removePhoto,
+  } = usePhoto(result.barcode);
   const [editingNote, setEditingNote] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   // F3: collapsed by default — the checklist is a lookup aid, not something
@@ -1282,6 +1537,18 @@ export default function ResultScreen({
               </div>
             </div>
           ) : null}
+
+          <IngredientPhotoCard
+            P={P}
+            productName={result.productName}
+            photoUrl={photoUrl}
+            takenAt={photoTakenAt}
+            stale={photoStale}
+            saving={photoSaving}
+            error={photoError}
+            onCapture={capturePhoto}
+            onRemove={removePhoto}
+          />
 
           <div
             style={{

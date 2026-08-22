@@ -876,6 +876,88 @@ describe("ResultScreen favorite star (F2)", () => {
   });
 });
 
+// F-E: no lib/photos mocking here on purpose — jsdom's actual absence of
+// IndexedDB, createImageBitmap and URL.createObjectURL *is* the important
+// case (see lib/photos.test.ts and components/usePhoto.test.ts for the
+// isolated storage/hook coverage). These tests confirm the real, unmocked
+// stack degrades cleanly inside the result screen instead of crashing it.
+describe("ResultScreen ingredient photo (F-E)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("offers the photo section for a clean (green) result too, not just KEINE_DATEN", () => {
+    renderResult();
+
+    expect(screen.getByText("foto · zutatenliste")).toBeInTheDocument();
+  });
+
+  it("offers the photo section on a real hit (JA) as well — documenting is allowed for every verdict", () => {
+    renderResult({
+      barcode: "20137946",
+      productName: "Erdnuss-Riegel",
+      brand: "ACME",
+      status: "JA",
+      ingredients: "Erdnüsse",
+      found: "Erdnüsse",
+    });
+
+    expect(screen.getByText("foto · zutatenliste")).toBeInTheDocument();
+  });
+
+  it("shows the capture control and no image when no photo is stored", () => {
+    renderResult();
+
+    expect(
+      screen.getByRole("button", { name: "Zutatenliste fotografieren" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByAltText(/Zutatenliste/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Neu aufnehmen/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Löschen$/)).not.toBeInTheDocument();
+  });
+
+  it("the capture button opens the camera/file picker", () => {
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click");
+    renderResult();
+
+    fireEvent.click(screen.getByRole("button", { name: "Zutatenliste fotografieren" }));
+
+    expect(clickSpy).toHaveBeenCalled();
+    clickSpy.mockRestore();
+  });
+
+  it("the hidden file input is set up for iOS's camera capture", () => {
+    renderResult();
+
+    const input = screen.getByLabelText("Foto der Zutatenliste aufnehmen");
+    expect(input).toHaveAttribute("type", "file");
+    expect(input).toHaveAttribute("accept", "image/*");
+    expect(input).toHaveAttribute("capture", "environment");
+  });
+
+  // The important jsdom case: no IndexedDB at all here, so the save must
+  // fail — but visibly (a loading beat, then an honest error), never by
+  // throwing and taking the whole result screen down with it.
+  it("shows a loading state, then a visible (non-throwing) error when saving fails", async () => {
+    renderResult();
+    const file = new File(["zutaten-foto"], "zutaten.jpg", { type: "image/jpeg" });
+    const input = screen.getByLabelText("Foto der Zutatenliste aufnehmen");
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(screen.getByText("wird verkleinert…")).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(screen.getByText(/Foto konnte nicht gespeichert werden/)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("wird verkleinert…")).not.toBeInTheDocument();
+    // The rest of the result screen is unaffected by the failed save.
+    expect(screen.getByText("Keine Erdnuss in den Zutaten.")).toBeInTheDocument();
+  });
+});
+
 describe("ResultScreen share (F6)", () => {
   afterEach(() => {
     Reflect.deleteProperty(navigator, "share");
