@@ -5,6 +5,7 @@ import type { Verdict } from "@/lib/verdict";
 import {
   readAllFavorites,
   recordFavoriteCheck,
+  subscribeFavorites,
   toggleFavorite as toggleFavoriteStore,
   type FavoriteEntry,
 } from "@/lib/favorites";
@@ -23,24 +24,38 @@ export function useFavorites() {
   useEffect(() => {
     setFavorites(readAllFavorites());
     setReady(true);
+    // subscribeFavorites (lib/favorites.ts) fires on *every* write to the
+    // store — a toggle and a recheck below included, not only an external
+    // one — so this single subscription is now the only place favorites
+    // state gets refreshed; toggleFavorite/recordCheck just call the plain
+    // store functions and let this listener pick up the result. That's what
+    // makes an F1 import land here too: components/useBackup.ts writes an
+    // imported/merged store directly into lib/favorites.ts (writeFavoriteStore),
+    // bypassing this hook's setters entirely — without this subscription
+    // that write would sit invisibly in localStorage until the next reload.
+    return subscribeFavorites(() => setFavorites(readAllFavorites()));
   }, []);
 
   const toggleFavorite = useCallback(
     (entry: { barcode: string; name: string; brand: string; verdict: Verdict; ts: number }) => {
       toggleFavoriteStore(entry.barcode, entry);
-      setFavorites(readAllFavorites());
     },
     [],
   );
 
-  /** Refresh a favorited barcode's verdict/ts after any fresh lookup —
-   * lib/favorites.ts's recordFavoriteCheck is already a no-op when the
-   * barcode isn't favorited, so this only re-reads (and re-renders) when it
-   * actually changed something. */
-  const recordCheck = useCallback((barcode: string, verdict: Verdict, ts: number) => {
-    recordFavoriteCheck(barcode, verdict, ts);
-    setFavorites((prev) => (prev.some((f) => f.barcode === barcode) ? readAllFavorites() : prev));
-  }, []);
+  /** Refresh a favorited barcode's verdict/ts after any fresh lookup.
+   * lib/favorites.ts's recordFavoriteCheck is a no-op (no persist(), so no
+   * notifyFavoritesChanged() either) when the barcode isn't favorited, so
+   * the subscription above only re-renders when this actually changed
+   * something. */
+  /** `person` hält fest, WESSEN Prüfung dieser Verdict war — siehe
+   * FavoriteEntry.personId in lib/favorites.ts für die Begründung. */
+  const recordCheck = useCallback(
+    (barcode: string, verdict: Verdict, ts: number, person?: { id: string; name: string }) => {
+      recordFavoriteCheck(barcode, verdict, ts, person);
+    },
+    [],
+  );
 
   return { favorites, ready, toggleFavorite, recordCheck };
 }

@@ -3,6 +3,7 @@ import type { Prefs } from "@/components/usePrefs";
 import type { Verdict } from "@/lib/verdict";
 import { sanitizePackMatchStore, type PackMatchStore } from "@/lib/packmatch";
 import { sanitizeNoteStore, type NoteStore } from "@/lib/notes";
+import { sanitizeFavoriteStore, type FavoriteStore } from "@/lib/favorites";
 
 /**
  * F1 — export/import as a family backup and device-to-device sync substitute
@@ -10,10 +11,22 @@ import { sanitizeNoteStore, type NoteStore } from "@/lib/notes";
  * parse/merge logic so it is unit-testable without touching localStorage or
  * the DOM; the actual localStorage reads/writes stay where each store
  * already owns them (components/useHistory.ts, lib/packmatch.ts,
- * lib/notes.ts) and are wired together by components/useBackup.ts.
+ * lib/notes.ts, lib/favorites.ts) and are wired together by
+ * components/useBackup.ts.
  */
 
 export const EXPORT_FORMAT = "peanot-export" as const;
+// Adding `favorites` to the export (F2's export/import gap — README) does
+// NOT bump this to 2. parseImportFile below rejects anything where
+// `v !== EXPORT_VERSION` outright, so bumping it would make every backup
+// file written before this change unreadable, even though every field in
+// one is still perfectly valid — and reading a *newer* export in an *older*
+// build of this app is not a use case this app supports (there's no
+// version-skew fleet to support; it's one family's own devices, upgraded
+// together). So `favorites` is instead treated as an optional field on the
+// existing v1 shape: parseImportFile's sanitizeFavoriteStore(obj.favorites)
+// already returns an empty store instead of erroring when an old export
+// simply doesn't have it, no version bump required.
 export const EXPORT_VERSION = 1 as const;
 
 // Mirrors components/useHistory.ts's own MAX_ENTRIES; the live hook always
@@ -29,6 +42,7 @@ export interface PeanotExport {
   prefs: Partial<Prefs>;
   packmatch: PackMatchStore;
   notes: NoteStore;
+  favorites: FavoriteStore;
 }
 
 export function buildExportPayload(input: {
@@ -36,6 +50,7 @@ export function buildExportPayload(input: {
   prefs: Prefs;
   packmatch: PackMatchStore;
   notes: NoteStore;
+  favorites: FavoriteStore;
 }): PeanotExport {
   return {
     format: EXPORT_FORMAT,
@@ -45,6 +60,7 @@ export function buildExportPayload(input: {
     prefs: input.prefs,
     packmatch: input.packmatch,
     notes: input.notes,
+    favorites: input.favorites,
   };
 }
 
@@ -111,19 +127,98 @@ export function mergeNotes(current: NoteStore, incoming: NoteStore): NoteStore {
   return merged;
 }
 
+// Mirrors lib/favorites.ts's own MAX_ENTRIES (50) — the live import path
+// always writes the merge result through lib/favorites.ts's own
+// writeFavoriteStore, which re-applies that module's prune() as a second
+// backstop, so this default only matters when mergeFavorites is called
+// directly (e.g. here in tests).
+const DEFAULT_FAVORITES_CAP = 50;
+
+/**
+ * Merge two favorites stores for import (F2's export/import gap — see
+ * README's F1 section). Additive like mergeNotes, but each field on a
+ * conflict follows its own rule, per lib/favorites.ts's field comments:
+ *
+ * - `verdict`, `ts`, `name`, `brand` all come from whichever side has the
+ *   more recently *checked* entry (larger `ts`) — "the newest real lookup
+ *   wins", the same rule mergeNotes uses for its edit timestamp. This does
+ *   *not* need mergePackMatch's fail-safe "mismatch always wins" treatment:
+ *   that rule exists because a pack-match answer can flip a computed
+ *   AllergenStatus (applyPackMatch, above) toward "safer". A favorite's
+ *   stored verdict never feeds a computed verdict anywhere in this app —
+ *   confirmed by reading every reader of FavoriteEntry.verdict: ScanScreen
+ *   only uses it to color the Favoriten strip's star chip and to badge an
+ *   "already known" barcode in ProductSearch, and *tapping* a favorite
+ *   (app/page.tsx's openFavorite) always runs the full lookup again rather
+ *   than trusting the stored value — whose result then overwrites this same
+ *   field via recordFavoriteCheck. So it is exactly as purely informational
+ *   as the README says, and "newest wins" is enough. If a future screen
+ *   ever started reading a stored favorite's verdict instead of re-checking,
+ *   this merge would need the same fail-safe treatment as mergePackMatch.
+ * - `addedAt` (when the barcode was first starred) is kept from `current`
+ *   on a conflict, never replaced by `incoming` — it's what orders the
+ *   Favoriten strip (most recently starred first) and decides which entry
+ *   prune() drops first, so an import must not be able to silently reshuffle
+ *   this device's own ordering. A barcode that only exists on the incoming
+ *   side keeps its incoming `addedAt`, since there is no local position for
+ *   it to disturb.
+ *
+ * Capped at maxEntries afterwards, keeping the most recently starred entries
+ * — the same rule lib/favorites.ts's own prune() applies — so an import can
+ * never grow the store past what a live device ever would.
+ */
+export function mergeFavorites(
+  current: FavoriteStore,
+  incoming: FavoriteStore,
+  maxEntries: number = DEFAULT_FAVORITES_CAP,
+): FavoriteStore {
+  const merged: FavoriteStore = { ...current };
+  for (const [barcode, next] of Object.entries(incoming)) {
+    const existing = merged[barcode];
+    if (!existing) {
+      merged[barcode] = next;
+      continue;
+    }
+    const fresher = next.ts > existing.ts ? next : existing;
+    merged[barcode] = { ...fresher, addedAt: existing.addedAt };
+  }
+  const entries = Object.entries(merged);
+  if (entries.length <= maxEntries) return merged;
+  return Object.fromEntries(
+    entries.sort(([, a], [, b]) => b.addedAt - a.addedAt).slice(0, maxEntries),
+  );
+}
+
 const VERDICTS: readonly Verdict[] = ["safe", "danger", "trace", "partial", "unknown"];
 function isVerdict(value: unknown): value is Verdict {
   return typeof value === "string" && (VERDICTS as readonly string[]).includes(value);
 }
 
 /** Drop anything that isn't a well-formed history entry — a malformed row in
- * an imported file is skipped, not allowed to crash the whole import. */
-function sanitizeHistory(value: unknown): HistoryEntry[] {
+ * an imported file is skipped, not allowed to crash the whole import.
+ *
+ * Exported so components/useHistory.ts's load() can run the exact same
+ * check on whatever is already sitting in localStorage (Befund 02): a
+ * corrupt row that made it into storage some other way (a future bug, a
+ * hand-edited value, a botched migration) must not crash every future
+ * launch just because it once got written. This file's only import *from*
+ * components/useHistory.ts is `import type { HistoryEntry }` above, which
+ * TypeScript erases at compile time — so useHistory.ts importing a value
+ * from here in return does not create a runtime import cycle.
+ *
+ * F (part 2): `personId`/`personName` are validated *if present*, but are
+ * never required — an entry lacking them is still a well-formed row (it
+ * predates the feature; see HistoryEntry's own comment), never dropped for
+ * that reason alone. Rejecting a personId-less row here would delete a
+ * household's entire pre-existing history the moment this update lands,
+ * since sanitizeHistory also runs on ordinary load(), not just import. */
+export function sanitizeHistory(value: unknown): HistoryEntry[] {
   if (!Array.isArray(value)) return [];
   const out: HistoryEntry[] = [];
   for (const item of value) {
     if (item === null || typeof item !== "object") continue;
-    const { id, ts, barcode, name, brand, verdict } = item as Record<string, unknown>;
+    const { id, ts, barcode, name, brand, verdict, personId, personName } =
+      item as Record<string, unknown>;
     if (
       typeof id === "string" &&
       typeof ts === "number" &&
@@ -132,7 +227,10 @@ function sanitizeHistory(value: unknown): HistoryEntry[] {
       typeof brand === "string" &&
       isVerdict(verdict)
     ) {
-      out.push({ id, ts, barcode, name, brand, verdict });
+      const entry: HistoryEntry = { id, ts, barcode, name, brand, verdict };
+      if (typeof personId === "string") entry.personId = personId;
+      if (typeof personName === "string") entry.personName = personName;
+      out.push(entry);
     }
   }
   return out;
@@ -144,6 +242,21 @@ function sanitizeHistory(value: unknown): HistoryEntry[] {
 // confirmation in ProfileScreen regardless (see README), so a malformed
 // field just falls back to the existing default the next time usePrefs
 // reads it.
+//
+// F: `persons`/`activePersonId` (see lib/persons.ts) ride along here too,
+// simply because they are just two more fields on Prefs — no special-casing
+// needed on the export side (buildExportPayload passes the whole live Prefs
+// object through) or here on import (this function doesn't validate any
+// individual Prefs field, this one included). An old export written before
+// `persons` existed just lacks the key, same as any other pre-existing Prefs
+// field would; components/usePrefs.ts's importPrefs is what re-derives a
+// valid persons state either way (see its own comment for why a bare legacy
+// `selectedAllergens` in that case still gets applied to the active person,
+// not silently dropped). Since they contain exactly the allergens being
+// checked, they are just as safety-relevant as the rest of Prefs, and so are
+// subject to the exact same rule: this file only *parses* them — nothing is
+// ever applied to the live app until the explicit "Übernehmen" confirmation
+// in ProfileScreen calls importPrefs.
 function sanitizePrefsPartial(value: unknown): Partial<Prefs> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Partial<Prefs>;
@@ -183,6 +296,12 @@ export function parseImportFile(raw: string): ImportParseResult {
       prefs: sanitizePrefsPartial(obj.prefs),
       packmatch: sanitizePackMatchStore(obj.packmatch),
       notes: sanitizeNoteStore(obj.notes),
+      // `favorites` is optional (see the format-version comment above):
+      // sanitizeFavoriteStore(undefined) already falls into its own
+      // "not an object" guard and returns {} without any special-casing
+      // here, so a pre-F2-export backup file just yields an empty store
+      // instead of being rejected.
+      favorites: sanitizeFavoriteStore(obj.favorites),
     },
   };
 }

@@ -2,13 +2,36 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { ACCENTS, type Accent, type Palette, type ThemeMode } from "@/lib/theme";
-import { ALLERGEN_LIST } from "@/lib/allergens/profile";
+import { ALLERGEN_LIST, getProfiles } from "@/lib/allergens/profile";
 import { FONT_SCALES, FONT_SCALE_LABEL } from "@/lib/fontScale";
 import type { Prefs } from "@/components/usePrefs";
 import type { ImportOutcome } from "@/components/useBackup";
 import type { ImportError } from "@/lib/backup";
-import { AppShell, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
-import { Download, IdCard, RotateCcw, Siren, Upload, User } from "lucide-react";
+import {
+  DEFAULT_PERSON_NAME,
+  addPersonToState,
+  getActivePerson,
+  removePerson as removePersonFromState,
+  renamePerson as renamePersonList,
+  setPersonAllergens as setPersonAllergensList,
+  switchActivePerson,
+  type Person,
+  type PersonsState,
+} from "@/lib/persons";
+import { AppShell, Chip, IconButton, Mono, SectionTitle, TabBar, TopBar, type Tab } from "@/components/ui";
+import {
+  Check,
+  Download,
+  IdCard,
+  Pencil,
+  RotateCcw,
+  Siren,
+  Trash2,
+  Upload,
+  User,
+  UserPlus,
+  X,
+} from "lucide-react";
 
 function importErrorCopy(error: ImportError): string {
   switch (error) {
@@ -212,6 +235,91 @@ export default function ProfileScreen({
   const [importSummary, setImportSummary] = useState<string | null>(null);
   const [pendingPrefs, setPendingPrefs] = useState<Partial<Prefs> | null>(null);
 
+  // F: Personen-Verwaltung. Diese Datei bekommt (siehe Prop-Liste oben) nur
+  // `prefs` und `setPref`, keine eigenen Hook-Methoden von
+  // components/usePrefs.ts — die reinen Aktionen aus lib/persons.ts werden
+  // deshalb hier direkt aufgerufen und ihr Ergebnis über mehrere
+  // `setPref`-Aufrufe zurückgeschrieben (persons, activePersonId und das
+  // davon abgeleitete selectedAllergens gemeinsam, nie nur eines davon).
+  const personsState: PersonsState = { persons: prefs.persons, activePersonId: prefs.activePersonId };
+  const activePerson = getActivePerson(personsState);
+
+  function applyPersonsState(next: PersonsState) {
+    // Ein No-op einer reinen Aktion (z. B. removePerson auf der letzten
+    // Person, switchActivePerson auf eine unbekannte ID) gibt laut
+    // lib/persons.ts dieselbe Objekt-Referenz zurück — dann gibt es nichts
+    // zu schreiben.
+    if (next === personsState) return;
+    setPref("persons", next.persons);
+    setPref("activePersonId", next.activePersonId);
+    setPref("selectedAllergens", getActivePerson(next).allergens);
+  }
+
+  // Umbenennen passiert inline (Textfeld statt window.prompt, damit es sich
+  // wie der Rest der App anfühlt) — daher ein eigener kleiner Bearbeitungs-
+  // Zustand, der nichts mit `prefs` zu tun hat und beim Screen-Remount
+  // zurückgesetzt wird, genau wie importSummary/pendingPrefs oben.
+  const [renamingPersonId, setRenamingPersonId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+
+  function startRenamePerson(person: Person) {
+    setRenamingPersonId(person.id);
+    setRenameDraft(person.name);
+  }
+
+  function commitRenamePerson() {
+    if (renamingPersonId) {
+      setPref("persons", renamePersonList(prefs.persons, renamingPersonId, renameDraft));
+    }
+    setRenamingPersonId(null);
+    setRenameDraft("");
+  }
+
+  function cancelRenamePerson() {
+    setRenamingPersonId(null);
+    setRenameDraft("");
+  }
+
+  function handleAddPerson() {
+    setRenamingPersonId(null);
+    // Numerierter Standardname ("Person 2", "Person 3", …) statt eines
+    // Eingabefelds beim Anlegen: wer eine zweite Person braucht, will meist
+    // direkt zu deren Allergen-Auswahl (die aktive Person wechselt sofort,
+    // siehe addPersonToState) — den Namen kann man jederzeit über den
+    // Umbenennen-Stift darunter ändern.
+    // Die neue Person erbt die Allergene der bisher aktiven als Startwert
+    // (siehe addPersonToState): Sie ist ab dem Anlegen sofort aktiv, und eine
+    // leere Liste hieße, dass bis zur ersten Auswahl niemand entschieden hat,
+    // worauf geprüft wird. Der geerbte Wert steht direkt darunter im
+    // Allergen-Umschalter und ist mit einem Tap zu ändern.
+    applyPersonsState(
+      addPersonToState(
+        personsState,
+        `Person ${prefs.persons.length + 1}`,
+        activePerson.allergens,
+      ),
+    );
+  }
+
+  function handleRemovePerson(person: Person) {
+    // Dieselbe window.confirm-Bestätigung wie anderswo in der App
+    // (Verlauf/Foto löschen). Der Fall "letzte Person" wird schon dadurch
+    // verhindert, dass die UI weiter unten für sie keinen Löschen-Button
+    // rendert — removePerson() selbst ist die zweite Absicherung.
+    const ok = window.confirm(
+      `${person.name} wirklich entfernen? Die für ${person.name} gespeicherten Allergene gehen dabei verloren.`,
+    );
+    if (!ok) return;
+    applyPersonsState(removePersonFromState(personsState, person.id));
+  }
+
+  function allergenSummary(person: Person): string {
+    if (person.allergens.length === 0) return "Keine Allergene ausgewählt";
+    return getProfiles(person.allergens)
+      .map((p) => p.label)
+      .join(", ");
+  }
+
   function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-picking the same file later
@@ -226,7 +334,7 @@ export default function ProfileScreen({
         return;
       }
       setImportSummary(
-        `Übernommen: ${outcome.historyCount} Scan(s), ${outcome.notesCount} Notiz(en), ${outcome.packmatchCount} Packungs-Antwort(en).`,
+        `Übernommen: ${outcome.historyCount} Scan(s), ${outcome.notesCount} Notiz(en), ${outcome.packmatchCount} Packungs-Antwort(en), ${outcome.favoritesCount} Favorit(en).`,
       );
       setPendingPrefs(Object.keys(outcome.prefs).length > 0 ? outcome.prefs : null);
     };
@@ -405,8 +513,231 @@ export default function ProfileScreen({
           />
         </Section>
 
-        <Section P={P} title="Meine Allergene">
+        <Section P={P} title="Personen">
+          {prefs.persons.length === 1 ? (
+            // Ein-Personen-Haushalt ist der Normalfall — der Abschnitt bleibt
+            // dafür auf genau das reduziert, was ein Familienzuwachs
+            // braucht: einen Weg, überhaupt eine zweite Person anzulegen.
+            // Keine Liste, kein Umschalter, kein Löschen-Button für die
+            // einzige Person — die gäbe es sonst nichts zu bedienen.
+            <>
+              <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.7, lineHeight: 1.4 }}>
+                {activePerson.name === DEFAULT_PERSON_NAME
+                  ? "Bisher nur für dich eingerichtet."
+                  : `Bisher nur für ${activePerson.name} eingerichtet.`}{" "}
+                Prüfst du auch für jemand anderen mit — z.&nbsp;B. ein Kind —, leg eine weitere
+                Person an; beim Scannen schaltest du dann einfach um.
+              </p>
+              <button
+                type="button"
+                className="tap"
+                onClick={handleAddPerson}
+                style={{
+                  width: "100%",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  background: "transparent",
+                  color: P.INK,
+                  border: `1.5px solid ${P.INK}33`,
+                  borderRadius: 99,
+                  padding: "10px 10px",
+                  fontWeight: 600,
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                }}
+              >
+                <UserPlus size={14} aria-hidden="true" />
+                Person hinzufügen
+              </button>
+            </>
+          ) : (
+            <>
+              <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.7, lineHeight: 1.4 }}>
+                Ein Ergebnis gilt immer nur für die aktive Person. Zum Prüfen für jemand anderen
+                hier umschalten.
+              </p>
+              {prefs.persons.map((person, i) => {
+                const isActive = person.id === prefs.activePersonId;
+                const isRenaming = renamingPersonId === person.id;
+                return (
+                  <div
+                    key={person.id}
+                    style={i > 0 ? { borderTop: `1px solid ${P.INK}14` } : undefined}
+                  >
+                    {isRenaming ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "8px 0",
+                        }}
+                      >
+                        <input
+                          value={renameDraft}
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                          aria-label={`Name von ${person.name}`}
+                          autoFocus
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            font: "inherit",
+                            fontSize: 14,
+                            fontWeight: 600,
+                            padding: "6px 8px",
+                            borderRadius: 8,
+                            border: `1.5px solid ${P.INK}33`,
+                            background: P.BG,
+                            color: P.INK,
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="tap hit44"
+                          aria-label="Umbenennen speichern"
+                          onClick={commitRenamePerson}
+                          style={{
+                            background: "transparent",
+                            border: 0,
+                            color: P.GREEN,
+                            padding: 0,
+                          }}
+                        >
+                          <Check size={18} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className="tap hit44"
+                          aria-label="Umbenennen abbrechen"
+                          onClick={cancelRenamePerson}
+                          style={{
+                            background: "transparent",
+                            border: 0,
+                            color: P.INK,
+                            opacity: 0.6,
+                            padding: 0,
+                          }}
+                        >
+                          <X size={18} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "8px 0",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="tap"
+                          aria-label={`Zu ${person.name} wechseln`}
+                          aria-pressed={isActive}
+                          onClick={() => applyPersonsState(switchActivePerson(personsState, person.id))}
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "flex-start",
+                            gap: 3,
+                            background: "transparent",
+                            border: 0,
+                            padding: 0,
+                            fontFamily: "inherit",
+                            color: "inherit",
+                            textAlign: "left",
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              fontSize: 14,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {person.name}
+                            {isActive ? <Chip P={P} tone="ok">Aktiv</Chip> : null}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              opacity: 0.65,
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            {allergenSummary(person)}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="tap hit44"
+                          aria-label={`${person.name} umbenennen`}
+                          onClick={() => startRenamePerson(person)}
+                          style={{ background: "transparent", border: 0, color: P.INK, padding: 0 }}
+                        >
+                          <Pencil size={15} aria-hidden="true" />
+                        </button>
+                        {prefs.persons.length > 1 ? (
+                          <button
+                            type="button"
+                            className="tap hit44"
+                            aria-label={`${person.name} entfernen`}
+                            onClick={() => handleRemovePerson(person)}
+                            style={{ background: "transparent", border: 0, color: P.RED, padding: 0 }}
+                          >
+                            <Trash2 size={15} aria-hidden="true" />
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                className="tap"
+                onClick={handleAddPerson}
+                style={{
+                  marginTop: 10,
+                  width: "100%",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  background: "transparent",
+                  color: P.INK,
+                  border: `1.5px solid ${P.INK}33`,
+                  borderRadius: 99,
+                  padding: "10px 10px",
+                  fontWeight: 600,
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                }}
+              >
+                <UserPlus size={14} aria-hidden="true" />
+                Person hinzufügen
+              </button>
+            </>
+          )}
+        </Section>
+
+        <Section
+          P={P}
+          title={
+            activePerson.name === DEFAULT_PERSON_NAME
+              ? "Meine Allergene"
+              : `Allergene von ${activePerson.name}`
+          }
+        >
           <p style={{ margin: "0 0 6px", fontSize: 13, opacity: 0.7, lineHeight: 1.4 }}>
+            {prefs.persons.length > 1 ? `Gilt nur für ${activePerson.name}. ` : ""}
             Wähle aus, worauf wir jedes Produkt prüfen sollen. Bei einem Treffer schlagen wir Alarm.
           </p>
           {ALLERGEN_LIST.map((profile, i) => {
@@ -424,7 +755,16 @@ export default function ProfileScreen({
                     const next = v
                       ? [...prefs.selectedAllergens, profile.key]
                       : prefs.selectedAllergens.filter((k) => k !== profile.key);
+                    // F: selectedAllergens bleibt gesetzt (siehe usePrefs.ts's
+                    // Feld-Kommentar — mehrere andere Dateien lesen nur das),
+                    // aber die eigentliche Quelle ist ab jetzt die aktive
+                    // Person in `persons`; beide müssen hier zusammen
+                    // geschrieben werden, sonst würde ein Reload die gerade
+                    // gemachte Änderung wieder verwerfen (usePrefs.ts's load()
+                    // leitet selectedAllergens bei jedem Laden aus `persons`
+                    // neu ab).
                     setPref("selectedAllergens", next);
+                    setPref("persons", setPersonAllergensList(prefs.persons, prefs.activePersonId, next));
                   }}
                 />
               </div>
@@ -542,8 +882,8 @@ export default function ProfileScreen({
           >
             <div style={{ fontSize: 14, fontWeight: 600 }}>Sichern &amp; übertragen</div>
             <p style={{ margin: "3px 0 10px", fontSize: 12.5, opacity: 0.7, lineHeight: 1.4 }}>
-              Eine Datei mit Verlauf, Notizen und Einstellungen — z. B. per AirDrop aufs
-              andere Familien-Handy.
+              Eine Datei mit Verlauf, Notizen, Favoriten und Einstellungen — z. B. per
+              AirDrop aufs andere Familien-Handy.
             </p>
             <div style={{ display: "flex", gap: 8 }}>
               <button

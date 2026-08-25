@@ -2,16 +2,31 @@ import { describe, expect, it } from "vitest";
 import type { HistoryEntry } from "@/components/useHistory";
 import type { StoredAnswer } from "@/lib/packmatch";
 import type { StoredNote } from "@/lib/notes";
+import type { FavoriteEntry } from "@/lib/favorites";
 import {
   EXPORT_FORMAT,
   EXPORT_VERSION,
   buildExportPayload,
+  mergeFavorites,
   mergeHistory,
   mergeNotes,
   mergePackMatch,
   parseImportFile,
+  sanitizeHistory,
 } from "@/lib/backup";
 import { DEFAULT_PREFS } from "@/components/usePrefs";
+
+function favorite(partial: Partial<FavoriteEntry> = {}): FavoriteEntry {
+  return {
+    barcode: "444",
+    name: "Reiswaffel",
+    brand: "dm Bio",
+    verdict: "safe",
+    ts: 1,
+    addedAt: 1,
+    ...partial,
+  };
+}
 
 function entry(partial: Partial<HistoryEntry>): HistoryEntry {
   return {
@@ -30,16 +45,70 @@ describe("buildExportPayload", () => {
     const history = [entry({})];
     const packmatch: Record<string, StoredAnswer> = { "111": { value: "match", ts: 1 } };
     const notes: Record<string, StoredNote> = { "111": { text: "Notiz", ts: 1 } };
+    const favorites = { "444": favorite() };
 
-    const payload = buildExportPayload({ history, prefs: DEFAULT_PREFS, packmatch, notes });
+    const payload = buildExportPayload({ history, prefs: DEFAULT_PREFS, packmatch, notes, favorites });
 
     expect(payload.format).toBe(EXPORT_FORMAT);
     expect(payload.v).toBe(EXPORT_VERSION);
     expect(payload.history).toEqual(history);
     expect(payload.prefs).toEqual(DEFAULT_PREFS);
     expect(payload.packmatch).toEqual(packmatch);
+    expect(payload.favorites).toEqual(favorites);
     expect(payload.notes).toEqual(notes);
     expect(() => new Date(payload.exportedAt).toISOString()).not.toThrow();
+  });
+
+  it("carries persons/activePersonId (F) along as part of prefs", () => {
+    const prefs = {
+      ...DEFAULT_PREFS,
+      persons: [
+        { id: "a", name: "Anna", allergens: ["peanut"] },
+        { id: "b", name: "Ben", allergens: ["milk"] },
+      ],
+      activePersonId: "b",
+      selectedAllergens: ["milk"],
+    };
+
+    const payload = buildExportPayload({
+      history: [],
+      prefs,
+      packmatch: {},
+      notes: {},
+      favorites: {},
+    });
+
+    expect(payload.prefs.persons).toEqual(prefs.persons);
+    expect(payload.prefs.activePersonId).toBe("b");
+  });
+});
+
+describe("sanitizeHistory person fields (F part 2)", () => {
+  it("does not drop an entry that has no personId/personName at all", () => {
+    // This is exactly the shape of every history row written before F(part
+    // 2) existed. sanitizeHistory runs on ordinary load() too (see its own
+    // comment in lib/backup.ts), so rejecting this would delete a
+    // household's entire pre-existing history the moment this update lands.
+    const result = sanitizeHistory([entry({})]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty("personId");
+    expect(result[0]).not.toHaveProperty("personName");
+  });
+
+  it("passes personId/personName through when present", () => {
+    const result = sanitizeHistory([
+      { ...entry({}), personId: "p1", personName: "Ben" },
+    ]);
+    expect(result[0]).toMatchObject({ personId: "p1", personName: "Ben" });
+  });
+
+  it("ignores a non-string personId/personName instead of failing the whole row", () => {
+    const result = sanitizeHistory([
+      { ...entry({}), personId: 42, personName: null },
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty("personId");
+    expect(result[0]).not.toHaveProperty("personName");
   });
 });
 
@@ -136,6 +205,76 @@ describe("mergeNotes", () => {
   });
 });
 
+describe("mergeFavorites (F2)", () => {
+  it("adds a barcode only present on one side, keeping its own addedAt", () => {
+    const incoming = { "111": favorite({ barcode: "111", addedAt: 42 }) };
+    expect(mergeFavorites({}, incoming)).toEqual(incoming);
+
+    const current = { "222": favorite({ barcode: "222", addedAt: 7 }) };
+    expect(mergeFavorites(current, {})).toEqual(current);
+  });
+
+  it("on a conflict, the more recently checked side's verdict/name/brand wins", () => {
+    const current = { "111": favorite({ barcode: "111", name: "Alt", verdict: "safe", ts: 1, addedAt: 5 }) };
+    const incoming = { "111": favorite({ barcode: "111", name: "Neu", verdict: "danger", ts: 9, addedAt: 500 }) };
+
+    // Both directions: whichever side is the *older* ts always loses,
+    // regardless of whether it's `current` or `incoming`.
+    expect(mergeFavorites(current, incoming)["111"]).toMatchObject({
+      name: "Neu",
+      verdict: "danger",
+      ts: 9,
+    });
+    expect(mergeFavorites(incoming, current)["111"]).toMatchObject({
+      name: "Neu",
+      verdict: "danger",
+      ts: 9,
+    });
+  });
+
+  it("on a conflict, keeps the local (current) addedAt so the Favoriten strip's order never jumps", () => {
+    const current = { "111": favorite({ barcode: "111", ts: 1, addedAt: 5 }) };
+    const incoming = { "111": favorite({ barcode: "111", ts: 9, addedAt: 999 }) };
+
+    // Even though the incoming side wins the verdict (newer ts), this
+    // device's own addedAt (5) must survive — an import must not be able
+    // to silently reorder a barcode this device already had starred.
+    expect(mergeFavorites(current, incoming)["111"]?.addedAt).toBe(5);
+  });
+
+  it("caps the merged result at maxEntries, keeping the most recently starred", () => {
+    const current: Record<string, FavoriteEntry> = {};
+    for (let i = 0; i < 30; i++) {
+      current[`c${i}`] = favorite({ barcode: `c${i}`, addedAt: i });
+    }
+    const incoming: Record<string, FavoriteEntry> = {};
+    for (let i = 0; i < 30; i++) {
+      incoming[`i${i}`] = favorite({ barcode: `i${i}`, addedAt: 1000 + i });
+    }
+
+    const merged = mergeFavorites(current, incoming, 50);
+
+    // 60 distinct barcodes merge down to 50, kept by addedAt (most recently
+    // starred first). All 30 "incoming" entries (addedAt 1000..1029) outrank
+    // every "current" one (addedAt 0..29), so all 30 survive; the 20 spots
+    // left go to the 20 most recently starred "current" entries — c10..c29.
+    expect(Object.keys(merged)).toHaveLength(50);
+    expect("i0" in merged).toBe(true);
+    expect("c29" in merged).toBe(true);
+    expect("c9" in merged).toBe(false);
+    expect("c0" in merged).toBe(false);
+  });
+
+  it("defaults maxEntries to lib/favorites.ts's own 50-entry cap", () => {
+    const current: Record<string, FavoriteEntry> = {};
+    for (let i = 0; i < 55; i++) {
+      current[`c${i}`] = favorite({ barcode: `c${i}`, addedAt: i });
+    }
+
+    expect(Object.keys(mergeFavorites(current, {}))).toHaveLength(50);
+  });
+});
+
 describe("parseImportFile", () => {
   function validFile(overrides: Record<string, unknown> = {}) {
     return JSON.stringify({
@@ -146,6 +285,7 @@ describe("parseImportFile", () => {
       prefs: { accent: "berry" },
       packmatch: { "111": { value: "match", ts: 1 } },
       notes: { "111": { text: "hallo", ts: 1 } },
+      favorites: { "444": favorite() },
       ...overrides,
     });
   }
@@ -157,7 +297,53 @@ describe("parseImportFile", () => {
     expect(result.data.history).toHaveLength(1);
     expect(result.data.packmatch).toEqual({ "111": { value: "match", ts: 1 } });
     expect(result.data.notes).toEqual({ "111": { text: "hallo", ts: 1 } });
+    expect(result.data.favorites).toEqual({ "444": favorite() });
     expect(result.data.prefs).toEqual({ accent: "berry" });
+  });
+
+  it("imports cleanly a pre-F (Personen) export whose prefs lack persons/activePersonId", () => {
+    // An export written before this feature existed only ever had the flat
+    // `selectedAllergens` on prefs — no `persons`/`activePersonId` keys at
+    // all. This file does no field-level validation on prefs (see its own
+    // comment), so such a file must parse exactly like any other: the
+    // missing keys are just absent from `prefs`, not a rejected import.
+    // components/usePrefs.ts's importPrefs is what derives a valid persons
+    // state from whatever ends up here.
+    const result = parseImportFile(
+      validFile({ prefs: { accent: "berry", selectedAllergens: ["milk", "gluten"] } }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.prefs).toEqual({ accent: "berry", selectedAllergens: ["milk", "gluten"] });
+    expect(result.data.prefs).not.toHaveProperty("persons");
+    expect(result.data.prefs).not.toHaveProperty("activePersonId");
+  });
+
+  it("falls back to an empty favorites store when the field is missing (a pre-F2 export)", () => {
+    // An export written before F2 has no `favorites` key at all — it must
+    // still import cleanly (empty store), not be rejected as invalid, and
+    // it must NOT be treated as an unsupported version (see EXPORT_VERSION's
+    // comment in lib/backup.ts: `favorites` is deliberately optional on the
+    // existing v1 shape rather than forcing a version bump).
+    const result = parseImportFile(validFile({ favorites: undefined }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.favorites).toEqual({});
+  });
+
+  it("drops malformed favorite entries instead of failing the whole import", () => {
+    const result = parseImportFile(
+      validFile({
+        favorites: {
+          good: favorite({ barcode: "good" }),
+          badVerdict: { ...favorite(), verdict: "maybe" },
+          missingAddedAt: { name: "Ok", brand: "X", verdict: "safe", ts: 1 },
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.favorites).toEqual({ good: favorite({ barcode: "good" }) });
   });
 
   it("rejects invalid JSON", () => {

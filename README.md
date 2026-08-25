@@ -92,6 +92,15 @@ deshalb über den Namen und die Marke aus dem Open-Food-Facts-Datensatz
   betreffen" mit Link zur amtlichen Meldung — das Verdict (JA/NEIN/…) ändert
   er nie, denn der Abgleich kann irren. Prüfen muss der Mensch: Meldung
   öffnen, Charge und MHD vergleichen.
+- Warn-only heißt aber nicht leise: Die Karte steht **über** dem Stempel,
+  nicht darunter. Ein grüner Stempel mit der Warnung unter der Falz war
+  genau der Fall, für den der Abgleich gebaut wurde — nicht deklarierte
+  Erdnuss ist der häufigste Rückrufgrund. Bei einem Treffer auf `NEIN` oder
+  einem Vorbehalt wird der Stempel deshalb amber statt grün und die
+  Überschrift sagt „Kein Treffer in den Daten — aber ein Rückruf könnte
+  passen." Das *berechnete* Verdict, der Verlaufseintrag, der Teilen-Text
+  und die Screenreader-Ansage bleiben davon unberührt; die Warnung ändert
+  ausschließlich die Lesereihenfolge.
 - Kein Treffer heißt nur „kein Namens-Treffer im Abgleichsfenster
   (180 Tage)", nie „kein Rückruf existiert". Das Ergebnis zeigt das als
   dezente Statuszeile, nicht als Entwarnung.
@@ -175,6 +184,29 @@ Allergene, Vibrieren/Ton bei Treffer, Spuren-Strikt, automatischer
 Kamera-Start sowie der Karten-Zusatztext und der Notfallplan (siehe unten).
 Kein Account, kein Server-State – „Leeren" entfernt den Verlauf wieder.
 
+Der Verlauf hält **einen Eintrag pro Barcode**: Ein erneuter Check ersetzt
+die alte Zeile, statt eine zweite anzulegen. Er ist damit eine Produktliste,
+kein Ereignis-Log — sonst hätte der vorgesehene Favoriten-Durchlauf vor dem
+Einkauf am 200er-Deckel genau die selten geprüften Produkte verdrängt,
+deren Verdict man nicht im Kopf hat. Undo nach dem Löschen und der Import
+laufen durch dieselbe Zusammenfassung.
+
+Beim Lesen aus `localStorage` läuft der Verlauf durch `sanitizeHistory`
+(`lib/backup.ts`, dieselbe Funktion wie im Import-Pfad). Eine kaputte Zeile
+— unbekanntes Verdict, fehlendes Feld — fällt einzeln weg, statt beim
+Rendern die ganze App umzuwerfen; die gültigen Zeilen daneben bleiben.
+
+### Wenn doch etwas umfällt (`app/error.tsx`)
+
+Fällt beim Rendern etwas um, fing das vorher niemand auf — Next.js' nackte
+Meldung „Application error" blieb stehen, ohne Zurück und ohne Neuladen.
+Für eine App, die man einhändig im Laden bedient, ist das der
+schlechtestmögliche Endzustand. `app/error.tsx` bietet stattdessen „Erneut
+versuchen" und, zweistufig bestätigt, „Verlauf zurücksetzen" — das entfernt
+ausschließlich `peanot.history.v1`; Notizen, Favoriten, Einstellungen und
+Notfallplan bleiben unangetastet. `app/global-error.tsx` deckt zusätzlich
+Abstürze im Root-Layout ab.
+
 ### Offline-Verhalten (`public/sw.js`, `components/useOnlineStatus.ts`)
 
 Der Service Worker cacht die App-Shell und, FIFO-begrenzt auf 150 Einträge,
@@ -186,6 +218,17 @@ Ein transienter Server-/Netzwerkfehler wird dagegen nie gecacht, damit er
 später keinen bereits vorhandenen guten Treffer für denselben Barcode
 verdrängt.
 
+Die Schriften kommen über `next/font/google`, werden also zur **Build-Zeit**
+geholt und von der eigenen Domain ausgeliefert. Zur Laufzeit geht damit kein
+Request mehr an Google — vorher bekam es bei jedem Erststart Referrer und IP
+des Geräts, was quer zum „alles bleibt auf diesem Gerät" des Rests stand.
+Der Service Worker braucht dafür keine Sonderbehandlung mehr: Die Dateien
+liegen unter `/_next/static/` und fallen unter die vorhandene
+Same-Origin-Regel. Merkposten für später: Bei der `variable`-Option hasht
+`next/font` den Familiennamen **nicht**, weshalb die in `components/` hart
+codierten Namen (`"'Fraunces', serif"` usw.) unverändert greifen — bei
+`className`-Nutzung wäre das anders.
+
 Ist ein Barcode weder live noch aus dem Cache zu klären, zeigt das Ergebnis
 `KEINE_DATEN` mit „zuletzt bekannt" – dem letzten echten Verdict aus dem
 Verlauf, klar als nicht mehr verifiziert gekennzeichnet, rein informativ.
@@ -193,6 +236,23 @@ Die Scan-Kopfzeile (`live`/`offline`, mit Punkt) spiegelt `navigator.onLine`;
 kehrt die Verbindung zurück, während ein Netzwerkfehler-Ergebnis offen ist,
 prüft die App denselben Barcode automatisch erneut – niemand muss sich
 merken, „Erneut prüfen" zu tippen.
+
+### Scan-Screen: Reihenfolge (`components/screens/ScanScreen.tsx`)
+
+Der Screen ist nach Häufigkeit sortiert, nicht nach Technik: Kamera →
+**Favoriten** → „zuletzt geprüft" → Eingabe-Alternativen („Manuell" und
+„Suchen" in einer Zeile) → ein abgesetztes Paar aus Allergie-Karte und
+Notfallplan. Der Kamerakasten ist auf `38dvh` gedeckelt, sonst bliebe auf
+einem 390×844-Display selbst direkt darunter kein Platz für die Favoriten —
+den Vor-dem-Einkauf-Check, für den sie da sind. Der Notfallplan bleibt
+kräftig rot: Auffindbarkeit unter Stress schlägt visuelle Zurückhaltung.
+
+Das Eingabe-Sheet schließt beim Absenden und zeigt den Ladezustand in sich
+selbst; vorher saß der Spinner im Kamerakasten hinter dem Scrim. Die
+Trefferliste der Namenssuche folgt der `visualViewport`-Höhe statt einem
+festen Deckel und zeigt für bereits geprüfte Produkte den bekannten Verdict
+als Punkt **mit Glyphe** — samt Prüfzeitpunkt im `aria-label`, damit er
+nicht als frische Prüfung durchgeht.
 
 ### Scanner: automatischer Start, Zoom (`components/BarcodeScanner.tsx`)
 
@@ -220,6 +280,21 @@ Im Ergebnis lässt sich pro Barcode eine kurze eigene Notiz hinterlegen (z. B.
 informativ: Eine Notiz wird an keiner Stelle gelesen, die ein Verdict
 berechnet, und kann ein Ergebnis nie beeinflussen.
 
+### Foto der Zutatenliste (`lib/photos.ts`)
+
+Bei `KEINE_DATEN` endet der Weg immer gleich: Packung in die Hand nehmen und
+selbst lesen. Ein einmal abfotografiertes Zutatenfeld, lokal zum Barcode
+gespeichert, kostet diese Arbeit genau einmal. Speicher ist **IndexedDB**
+(Fotos sprengen den localStorage-Rahmen), Bilder werden vor dem Speichern
+verkleinert, Deckel 50 Einträge FIFO.
+
+Das Foto ist ein Gedächtnis, kein Beleg für den aktuellen Stand: Das
+Aufnahmedatum steht immer dabei, und nach 180 Tagen sagt die Karte deutlich,
+dass es alt ist — viel kürzer als die 24 Monate, ab denen ein
+Open-Food-Facts-Datensatz als alt gilt, weil ein selbst geschossenes Foto
+eher zum Draufverlassen verführt. **Kein OCR, kein eigenes Verdict**: Das
+Foto wird an keiner Stelle gelesen, die ein Verdict berechnet.
+
 ### Favoriten (`lib/favorites.ts`)
 
 Der Alltag einer Allergiker-Familie besteht meist aus denselben 10–20
@@ -245,6 +320,17 @@ bei fehlenden Zielen) landet derselbe Text stattdessen in der Zwischenablage,
 mit kurzer Bestätigung auf dem Screen — derselbe Zwei-Stufen-Fallback wie
 beim Export (F1).
 
+### Liste teilen (`buildShareListText`)
+
+„Liste teilen" (Verlauf-Kopfzeile) schickt die aktuell **gefilterte** Auswahl
+als Klartext — Suchfeld und Filter-Chips haben sie sichtbar
+zusammengestellt. Jede Zeile trägt ein **absolutes Datum**, nicht
+`formatRelative`: „Heute" stimmt nur für den, der gerade auf den Schirm sieht,
+und ist in einer Nachricht, die am nächsten Morgen gelesen wird, schlicht
+falsch. Ein Fusssatz nennt die Momentaufnahme beim Namen, die Labels kommen
+unverändert aus `VERDICT`, und eine Kürzung ab 30 Einträgen wird benannt statt
+still vorgenommen.
+
 ### Export & Import (`lib/backup.ts`)
 
 Da alle Daten nur lokal liegen, ersetzt ein manueller Export den fehlenden
@@ -252,9 +338,10 @@ Familien-Sync: **„Exportieren"** (Profil → Daten) baut eine JSON-Datei aus
 Verlauf, Notizen, Packungs-Antworten und Einstellungen
 (`{format:"peanot-export", v:1, …}`) und übergibt sie per Web-Share-Sheet
 (z. B. AirDrop aufs zweite Familien-Handy) oder, falls nicht verfügbar, als
-Direkt-Download. Favoriten (`peanot.favorites.v1`) sind (noch) nicht Teil
-dieser Datei — sie leben aktuell nur auf dem Gerät, auf dem sie angelegt
-wurden.
+Direkt-Download. Favoriten reisen mit; bei einem Konflikt um
+denselben Barcode gewinnt für Verdict und Name die zuletzt geprüfte Seite,
+während `addedAt` lokal bleibt, damit ein Import die Reihenfolge der
+Favoriten-Leiste nicht durchschüttelt.
 
 **„Importieren"** liest eine solche Datei und **merged** statt zu
 überschreiben:
@@ -285,10 +372,107 @@ man im Ernstfall das Handy in die Hand drückt.
 Die Schrittliste startet mit einer allgemeinen, unverbindlichen
 Beispiel-Vorlage — bewusst keine medizinische Anweisung der App. Die Familie
 muss sie einmal **bestätigen** (unverändert übernehmen) oder **bearbeiten**
-und speichern, bevor sie als „ihr eigener Plan" gilt (`confirmed`); bis dahin
-öffnet der Screen direkt im Bearbeiten-Modus. Gespeichert wird lokal in
+und speichern, bevor sie als „ihr eigener Plan" gilt (`confirmed`). Bis dahin
+öffnet der Screen in einer Leseansicht mit dem Disclaimer und den zwei
+Aktionen „Unverändert übernehmen" und „Bearbeiten" — vorher landete man
+sofort im Editor, dessen Textfelder die mehrzeiligen Vorlage-Schritte mitten
+im Satz abschnitten, ausgerechnet in dem Moment, in dem man sie vollständig
+lesen und bewusst bestätigen soll. Alle Textfelder wachsen jetzt mit ihrem
+Inhalt, auch bei „Sehr groß". Gespeichert wird lokal in
 `prefs.emergencyPlan` (`peanot.prefs.v1`), wie `prefs.cardNote` rein
 informativ und an keiner Stelle mit Verdict-Logik verbunden.
+
+Dazu zwei Listen, beide optional und leer gültig:
+
+- **Autoinjektoren** mit Ort und Ablaufdatum (`YYYY-MM-DD`). Ein abgelaufener
+  Pen ist ein realer, verbreiteter Notfall-Fehler — das Datum steht klein auf
+  einem Gerät, das man hoffentlich nie benutzt. Abgelaufen und „läuft in unter
+  60 Tagen ab" erscheinen auch oben auf dem Scan-Screen. Bewusst kein
+  „in Ordnung"-Zustand: Die App ist kein Medizinprodukt, ein Datum ist eine
+  Erinnerung, keine Freigabe. `getPenStatus` vergleicht auf Kalendertag-Ebene,
+  nicht auf Millisekunden — sonst kippte der Status je nach Zeitzone um einen
+  Tag.
+- **Notfallkontakte** (max. 4) als `tel:`-Links direkt unter der 112, die
+  groß und primär bleibt. Für Oma oder den Babysitter ist das der Unterschied
+  zwischen „Notfallplan" und „Notfallhilfe".
+
+## Personen (`lib/persons.ts`)
+
+Die Allergen-Auswahl gehört zu einer **Person**, nicht zum Gerät. Es gibt
+immer genau eine aktive Person; ein Ergebnis gilt immer nur für sie und nennt
+sie ab der zweiten Person beim Namen. Bewusst **keine Vereinigungsmenge** über
+mehrere Personen — die hätte genau das Ausgangsproblem zurückgebracht: ein
+„sicher", das in Wahrheit nur für eine der beiden stimmt.
+
+`prefs.selectedAllergens` bleibt als **abgeleitetes** Feld erhalten und
+spiegelt immer die Allergene der aktiven Person (ein halbes Dutzend Stellen
+liest es, u. a. die API-Route). Nie direkt setzen.
+
+`migratePersonsState` läuft bei **jedem** Laden und ist damit zugleich
+Alt-zu-neu-Migration und dauerhafte Validierung. Erste Regel: Gibt es keine
+gültige `persons`-Liste, wird `selectedAllergens` **exakt** übernommen — eine
+Migration darf nie still ändern, was ein Scan als Treffer meldet. Eine neue
+Person erbt die Allergene der bisher aktiven, statt leer zu starten: Sie ist
+ab dem Anlegen sofort aktiv, und eine leere Liste hieße, dass bis zur ersten
+Auswahl niemand entschieden hat, worauf geprüft wird.
+
+Ein-Personen-Haushalt ist der Normalfall und bleibt unverändert schlicht: kein
+Umschalter auf dem Scan-Screen, keine Namen im Verlauf, keine Änderung am
+Ergebnis.
+
+### Wer hat geprüft — Verlauf und Favoriten
+
+Sobald es zwei Personen gibt, ist ein Verlaufseintrag „Sicher" **ohne**
+Personenangabe mehrdeutig und damit gefährlich: Wer für Ben einkauft und eine
+für Anna geprüfte Zeile sieht, liest eine Entwarnung, die nie für ihn galt.
+Deshalb:
+
+- `HistoryEntry` trägt `personId` **und** `personName` — der Name, damit ein
+  alter Eintrag nach dem Umbenennen oder Löschen einer Person weiter sagen
+  kann, für wen er galt. Die Dedup-Regel greift entsprechend nach
+  **Barcode + Person**, sonst löschte Bens Prüfung Annas Zeile.
+- Einträge ohne Personenangabe stammen aus der Zeit, als es genau eine Person
+  gab; sie werden **beim Lesen** der ersten Person zugeordnet, nicht durch
+  Umschreiben des gespeicherten Verlaufs.
+- „Liste teilen" sendet ab zwei Personen nur die Einträge der aktiven Person
+  und sagt das — `buildShareListText` hat kein Personenfeld, eine gemischte
+  Liste läse sich sonst als eine einzige Entwarnung.
+- Der **Stern** bleibt haushaltsweit: Ein Favorit ist ein Produkt, das die
+  Familie kauft, und ein eigener Stern pro Person hieße doppelte Einträge für
+  dieselben Stammprodukte. Gefährlich ist nicht der geteilte Stern, sondern
+  ein unbeschrifteter Verdict daran — deshalb merkt sich `FavoriteEntry`, wer
+  zuletzt geprüft hat, und die Karte zeigt es ab zwei Personen an.
+
+## Rückruf-Wächter (`app/api/recalls/`, `components/useRecallWatch.ts`)
+
+Der Abgleich aus dem Ergebnis-Screen läuft nur beim Scannen. Was schon im
+Schrank steht, erführe einen Rückruf nie — dabei ist genau das der Fall, für
+den er existiert. Der Wächter prüft deshalb Favoriten und jüngeren Verlauf
+gegen dieselbe amtliche Warnliste, höchstens alle 6 Stunden (die Liste ist
+serverseitig ohnehin so lange gecacht) und nie offline.
+
+Warn-only wie im Ergebnis: Der Streifen auf dem Scan-Screen ändert kein
+Verdict und keinen Verlaufseintrag. Und er behauptet nie das Gegenteil — bei
+keinem Treffer oder unerreichbarem Portal steht dort **nichts**, nirgends ein
+„keine Rückrufe". Ist das Portal nicht erreichbar, antwortet die Route
+`unavailable` statt einer leeren Trefferliste: Die sähe für den Client exakt
+aus wie „geprüft, nichts gefunden".
+
+## Deep-Links (`?screen=`)
+
+Die Route spiegelt sich in `?screen=` (`scan`, `verlauf`, `profil`, `karte`,
+`notfall`). Tab-Wechsel schreiben per `replaceState`, damit der Zurück-Stack
+nicht volläuft; `karte` und `notfall` hängen an `useHistoryOverlay`, das
+seinen History-Eintrag ohnehin schon pusht.
+
+Bewusst **nicht** abgebildet: `result` (hängt an einem transienten Lookup —
+ein Deep-Link darauf zeigte eine Sicherheitsanzeige ohne Datengrundlage) und
+`onboarding` (hängt an `prefs.onboarded`, das immer gegen die URL gewinnt).
+
+Praktischer Nutzen auf dem iPhone: `/?screen=notfall` in Safari öffnen und
+als **zweites Icon** zum Home-Bildschirm hinzufügen — ein Tap vom Sperrbild
+zum Notfallplan. Die `shortcuts` im Manifest sind für Android; iOS wertet
+Manifest-Shortcuts nicht aus.
 
 ## Architektur
 
@@ -316,7 +500,9 @@ informativ und an keiner Stelle mit Verdict-Logik verbunden.
   `components/useOnlineStatus.ts` liefert dazu `navigator.onLine` als Hook.
 - `app/api/product/[barcode]/route.ts` – API-Route, komponiert Client + Erkennung.
 - `app/page.tsx` – Client-Router über die Screens (inkl. `notfall`-Route für
-  `EmergencyScreen`).
+  `EmergencyScreen`), spiegelt die Route in `?screen=`.
+- `app/error.tsx`, `app/global-error.tsx` – Auffangnetz für Render-Fehler,
+  mit „Erneut versuchen" und einem eng begrenzten „Verlauf zurücksetzen".
 - `components/` – `BarcodeScanner` (@zxing/browser), `ManualEntry`, geteilte
   UI-Atome (`ui.tsx`), `useHistory`/`usePrefs`/`useNote`/`useFavorites`
   (localStorage), `useBackup` (Export/Import-Orchestrierung) und `screens/`

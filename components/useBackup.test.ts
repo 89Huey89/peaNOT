@@ -5,6 +5,7 @@ import type { HistoryEntry } from "@/components/useHistory";
 import { DEFAULT_PREFS } from "@/components/usePrefs";
 import { readAllPackMatch, writePackMatch } from "@/lib/packmatch";
 import { readAllNotes, writeNote } from "@/lib/notes";
+import { readFavoriteStore, toggleFavorite } from "@/lib/favorites";
 import { EXPORT_FORMAT, EXPORT_VERSION } from "@/lib/backup";
 
 const LOCAL: HistoryEntry = {
@@ -49,9 +50,12 @@ describe("useBackup.importData", () => {
     expect(importHistory).not.toHaveBeenCalled();
   });
 
-  it("delegates history to importHistory, and merges packmatch/notes directly into storage", () => {
+  it("delegates history to importHistory, and merges packmatch/notes/favorites directly into storage", () => {
     writePackMatch("111", "mismatch", 1); // local answer must survive a looser import
     writeNote("222", "lokale Notiz", 1);
+    // Local favorite, starred well before the import — its addedAt (its
+    // position in the Favoriten strip) must survive the merge untouched.
+    toggleFavorite("444", { name: "Lokal-Favorit", brand: "Z", verdict: "safe", ts: 1 }, 10);
 
     const { result, importHistory } = setup([LOCAL]);
 
@@ -65,6 +69,12 @@ describe("useBackup.importData", () => {
       prefs: { accent: "clay" },
       packmatch: { "111": { value: "match", ts: 999 } }, // conflicts with the local mismatch above
       notes: { "333": { text: "importierte Notiz", ts: 5 } },
+      favorites: {
+        // Same barcode as the local favorite, but a *newer* check (ts) and
+        // an unrelated addedAt from the other device.
+        "444": { barcode: "444", name: "Import-Favorit", brand: "Z", verdict: "danger", ts: 99, addedAt: 500 },
+        "555": { barcode: "555", name: "Neu", brand: "W", verdict: "safe", ts: 1, addedAt: 1 },
+      },
     });
 
     const outcome = result.current.importData(raw);
@@ -74,6 +84,7 @@ describe("useBackup.importData", () => {
       historyCount: 1,
       packmatchCount: 1,
       notesCount: 1,
+      favoritesCount: 2,
       prefs: { accent: "clay" },
     });
     expect(importHistory).toHaveBeenCalledTimes(1);
@@ -86,6 +97,13 @@ describe("useBackup.importData", () => {
     expect(readAllNotes()).toEqual({
       "222": { text: "lokale Notiz", ts: 1 },
       "333": { text: "importierte Notiz", ts: 5 },
+    });
+    // Favorites merge additively too; on the "444" conflict the newer check
+    // (ts:99) wins the verdict/name, but this device's own addedAt (10) is
+    // kept so the Favoriten strip's order doesn't jump around.
+    expect(readFavoriteStore()).toEqual({
+      "444": { barcode: "444", name: "Import-Favorit", brand: "Z", verdict: "danger", ts: 99, addedAt: 10 },
+      "555": { barcode: "555", name: "Neu", brand: "W", verdict: "safe", ts: 1, addedAt: 1 },
     });
   });
 });
@@ -121,6 +139,45 @@ describe("useBackup.exportData", () => {
     const file = shared.data?.files?.[0];
     expect(file?.name).toMatch(/^peanot-backup-\d{4}-\d{2}-\d{2}\.json$/);
     expect(file?.type).toBe("application/json");
+
+    Reflect.deleteProperty(navigator, "share");
+    Reflect.deleteProperty(navigator, "canShare");
+  });
+
+  it("includes the current favorites store in the exported file (F2)", async () => {
+    toggleFavorite("444", { name: "Reiswaffel", brand: "dm Bio", verdict: "safe", ts: 1 }, 10);
+
+    const shared: { data?: ShareData } = {};
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: vi.fn(async (data: ShareData) => {
+        shared.data = data;
+      }),
+    });
+    Object.defineProperty(navigator, "canShare", {
+      configurable: true,
+      value: vi.fn(() => true),
+    });
+
+    const { result } = setup([LOCAL]);
+    await act(async () => {
+      await result.current.exportData();
+    });
+
+    const file = shared.data?.files?.[0];
+    // jsdom's File has no .text()/.arrayBuffer() — FileReader is what
+    // components/screens/ProfileScreen.tsx's own import path already uses
+    // to read a File's contents, so it's exercised here too.
+    const text = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(file!);
+    });
+    expect(JSON.parse(text).favorites).toEqual(readFavoriteStore());
+    expect(JSON.parse(text).favorites).toEqual({
+      "444": { barcode: "444", name: "Reiswaffel", brand: "dm Bio", verdict: "safe", ts: 1, addedAt: 10 },
+    });
 
     Reflect.deleteProperty(navigator, "share");
     Reflect.deleteProperty(navigator, "canShare");

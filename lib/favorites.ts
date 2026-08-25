@@ -19,6 +19,29 @@ export interface FavoriteEntry {
   verdict: Verdict;
   /** Epoch milliseconds of that last lookup, same meaning as HistoryEntry.ts. */
   ts: number;
+  /**
+   * F: WESSEN Prüfung `verdict`/`ts` festhalten. Der Stern selbst bleibt
+   * bewusst pro Barcode und damit haushaltsweit — ein Favorit ist ein Produkt,
+   * das die Familie kauft, und ein eigener Stern pro Person hieße für dieselben
+   * 15 Stammprodukte doppelte Einträge und doppelte Taps, ohne dass irgendetwas
+   * sicherer würde.
+   *
+   * Gefährlich ist nicht der geteilte Stern, sondern ein UNBESCHRIFTETER
+   * Verdict daran: Prüft Ben ein Stammprodukt nach, überschreibt sein Ergebnis
+   * das, was Anna zuletzt an derselben Karte gesehen hat. Ohne Namen liest das
+   * jeder als eigene Entwarnung. Mit Namen ist es das, was es ist — die letzte
+   * Prüfung einer bestimmten Person, die man mit einem Tap für sich selbst
+   * wiederholen kann.
+   *
+   * Optional, weil Einträge aus der Zeit vor den Personen sie nicht haben; die
+   * UI behandelt ein fehlendes Feld wie "gehört zur ersten Person", genau wie
+   * der Verlauf (siehe resolvedHistoryPersonId in components/useHistory.ts).
+   * Der Name wird mitgespeichert, nicht nur die ID: Wird eine Person gelöscht
+   * oder umbenannt, muss die Karte weiter sagen können, für wen der Verdict
+   * galt, statt auf eine tote ID zu zeigen.
+   */
+  personId?: string;
+  personName?: string;
   /** Epoch milliseconds this barcode was starred. Unlike `ts`, this never
    * changes again — it orders the Favoriten strip (most recently starred
    * first) and decides which entry is dropped once MAX_ENTRIES is exceeded. */
@@ -43,7 +66,10 @@ export function sanitizeFavoriteStore(value: unknown): Store {
   const store: Store = {};
   for (const [barcode, entry] of Object.entries(value as Record<string, unknown>)) {
     if (entry === null || typeof entry !== "object") continue;
-    const { name, brand, verdict, ts, addedAt } = entry as Record<string, unknown>;
+    const { name, brand, verdict, ts, addedAt, personId, personName } = entry as Record<
+      string,
+      unknown
+    >;
     if (
       typeof name === "string" &&
       typeof brand === "string" &&
@@ -51,7 +77,19 @@ export function sanitizeFavoriteStore(value: unknown): Store {
       typeof ts === "number" &&
       typeof addedAt === "number"
     ) {
-      store[barcode] = { barcode, name, brand, verdict, ts, addedAt };
+      // personId/personName sind optional und dürfen einen sonst gültigen
+      // Eintrag NIE verwerfen — Favoriten aus der Zeit vor den Personen
+      // hätten sonst beim Update den Stern verloren.
+      store[barcode] = {
+        barcode,
+        name,
+        brand,
+        verdict,
+        ts,
+        addedAt,
+        ...(typeof personId === "string" ? { personId } : {}),
+        ...(typeof personName === "string" ? { personName } : {}),
+      };
     }
   }
   return store;
@@ -73,7 +111,40 @@ function persist(store: Store): void {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   } catch {
     /* storage unavailable – the favorite stays in memory for this screen */
+  } finally {
+    // Every write to this store — a toggle, a recheck, or an F1 import merge
+    // (components/useBackup.ts writes here directly via writeFavoriteStore,
+    // the same way it already does for lib/notes.ts/lib/packmatch.ts) — goes
+    // through persist(), so notifying here once covers all of them. `finally`
+    // rather than only the success path: even a failed write leaves the
+    // in-memory store unchanged from what load() would already return, so a
+    // subscriber re-reading is harmless either way, and it means a caller of
+    // persist() never has to remember to notify separately.
+    notifyFavoritesChanged();
   }
+}
+
+type FavoritesListener = () => void;
+const listeners = new Set<FavoritesListener>();
+
+/**
+ * Subscribe to any change made to this store from anywhere in this tab.
+ * components/useFavorites.ts is the only subscriber: it holds the React
+ * state that ScanScreen/ResultScreen/HistoryScreen render favorites from,
+ * cached from this module at mount. An F1 import (components/useBackup.ts)
+ * writes a merged store straight into localStorage here — exactly like it
+ * already does for notes/pack-match, which have no React state to go stale
+ * — but favorites *do* have React state, and without this subscription an
+ * imported favorite would sit invisibly in localStorage until the next
+ * reload. Returns an unsubscribe function.
+ */
+export function subscribeFavorites(listener: FavoritesListener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function notifyFavoritesChanged(): void {
+  for (const listener of listeners) listener();
 }
 
 /** Keep the most recently starred entries only, so the list cannot grow
@@ -95,6 +166,28 @@ export function readAllFavorites(): FavoriteEntry[] {
 /** Whether a barcode is currently starred. */
 export function isFavoriteBarcode(barcode: string): boolean {
   return barcode in load();
+}
+
+/**
+ * The full favorites store, keyed by barcode — for the export side of F1
+ * (lib/backup.ts's buildExportPayload). Distinct from readAllFavorites()
+ * above, which returns the sorted array the Favoriten strip renders;
+ * mergeFavorites (lib/backup.ts) needs this raw record shape to merge
+ * against an imported store barcode-by-barcode.
+ */
+export function readFavoriteStore(): Store {
+  return load();
+}
+
+/**
+ * Replace the full favorites store, for the import side of F1
+ * (lib/backup.ts) — the caller (mergeFavorites) has already folded in the
+ * existing entries and applied its own cap, so this just persists (with the
+ * usual prune as a second backstop) and — via persist()'s notify — updates
+ * any mounted components/useFavorites.ts immediately.
+ */
+export function writeFavoriteStore(store: Store): void {
+  persist(prune(store));
 }
 
 /**
@@ -129,11 +222,24 @@ export function toggleFavorite(
  * re-runs the ordinary lookup against Open Food Facts, and the star only
  * ever reflects that latest result, never the one from when it was starred.
  */
-export function recordFavoriteCheck(barcode: string, verdict: Verdict, ts: number): void {
+export function recordFavoriteCheck(
+  barcode: string,
+  verdict: Verdict,
+  ts: number,
+  person?: { id: string; name: string },
+): void {
   if (typeof window === "undefined") return;
   const store = load();
   const existing = store[barcode];
   if (!existing) return;
-  store[barcode] = { ...existing, verdict, ts };
+  // Wer geprüft hat, wandert mit dem Verdict mit: Die drei Felder beschreiben
+  // gemeinsam EINE Prüfung und dürfen nie auseinanderlaufen (siehe
+  // FavoriteEntry.personId).
+  store[barcode] = {
+    ...existing,
+    verdict,
+    ts,
+    ...(person ? { personId: person.id, personName: person.name } : {}),
+  };
   persist(store);
 }

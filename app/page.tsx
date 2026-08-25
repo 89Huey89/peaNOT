@@ -5,11 +5,18 @@ import { palette } from "@/lib/theme";
 import { FONT_SCALE_FACTOR } from "@/lib/fontScale";
 import { unlockAudio } from "@/lib/feedback";
 import { isVerdictWorsening } from "@/lib/verdict";
+import { getActivePerson } from "@/lib/persons";
 import { useProductLookup } from "@/components/useProductLookup";
 import { usePrefs } from "@/components/usePrefs";
 import { useHistoryOverlay } from "@/components/useHistoryOverlay";
-import { useHistory, resolveHistoryVerdict, type HistoryEntry } from "@/components/useHistory";
+import {
+  useHistory,
+  resolveHistoryVerdict,
+  resolvedHistoryPersonId,
+  type HistoryEntry,
+} from "@/components/useHistory";
 import { useFavorites } from "@/components/useFavorites";
+import { useRecallWatch } from "@/components/useRecallWatch";
 import { useBackup } from "@/components/useBackup";
 import { Logo, type Tab } from "@/components/ui";
 import OnboardingScreen from "@/components/screens/OnboardingScreen";
@@ -22,8 +29,19 @@ import EmergencyScreen from "@/components/screens/EmergencyScreen";
 
 type Route = "onboarding" | "scan" | "verlauf" | "profil" | "result" | "karte" | "notfall";
 
+// Befund 09: the subset of Route values that get mirrored into `?screen=`.
+// "onboarding" is deliberately excluded (it's driven by prefs.onboarded, not
+// the URL — see the bootstrap effect) and so is "result" (a transient lookup
+// result that doesn't survive a reload, so a deep link to it would show a
+// safety verdict with no data behind it — see Befund 09 in the review).
+const DEEP_LINKABLE_ROUTES: readonly Route[] = ["scan", "verlauf", "profil", "karte", "notfall"];
+
+function isDeepLinkableRoute(value: string | null): value is Route {
+  return !!value && (DEEP_LINKABLE_ROUTES as readonly string[]).includes(value);
+}
+
 export default function Home() {
-  const { prefs, setPref, importPrefs, ready: prefsReady } = usePrefs();
+  const { prefs, setPref, importPrefs, ready: prefsReady, setActivePerson } = usePrefs();
   const {
     history,
     record,
@@ -40,6 +58,11 @@ export default function Home() {
     ready: favoritesReady,
   } = useFavorites();
   const { loading, result, lookup } = useProductLookup();
+  // F5 (Rückruf-Wächter): checks favorites + recent history against official
+  // recall notices independent of any scan — see components/useRecallWatch.ts
+  // for the throttling/acknowledgement rules. Fed the same favorites/history
+  // arrays ScanScreen already renders, so no separate store is needed here.
+  const { hits: recallHits, acknowledge: acknowledgeRecall } = useRecallWatch(favorites, history);
   const { exportData, importData } = useBackup({ history, importHistory: importEntries, prefs });
 
   const [route, setRoute] = useState<Route | null>(null);
@@ -71,6 +94,18 @@ export default function Home() {
   const fontScale = FONT_SCALE_FACTOR[prefs.fontScale];
   const ready = prefsReady && historyReady && favoritesReady;
 
+  // F (part 2): `prefs` already structurally satisfies PersonsState
+  // (persons + activePersonId), so getActivePerson can read it directly —
+  // no separate state object to keep in sync. `firstPersonId` is
+  // persons[0]'s id: the longest-standing person, needed only to resolve a
+  // history entry that predates this feature and so carries no personId at
+  // all — see useHistory.ts's resolvedHistoryPersonId for the full
+  // reasoning. Both are cheap to recompute on every render; there is no
+  // reason to memoize a two-field lookup into a list of at most a handful
+  // of people.
+  const activePerson = getActivePerson(prefs);
+  const firstPersonId = prefs.persons[0]?.id ?? activePerson.id;
+
   // Color the area around the app column (and behind safe-area insets).
   // Also set on <html>, not just <body>: globals.css hard-codes html's
   // background for the pre-hydration paint, and iOS rubber-band overscroll
@@ -97,10 +132,20 @@ export default function Home() {
   }, [P.BG]);
 
   // Decide the first screen once storage has loaded (avoids onboarding flash).
+  // Befund 09: also honors a `?screen=` deep link (a manifest shortcut, a
+  // second Home Screen icon, or a shared/reloaded URL) so a reload doesn't
+  // always dump the user back on Scan. prefs.onboarded === false always
+  // wins over the URL — onboarding is a one-time gate, not a "screen" a link
+  // should be able to skip.
   useEffect(() => {
     if (!ready || bootstrapped.current) return;
     bootstrapped.current = true;
-    setRoute(prefs.onboarded ? "scan" : "onboarding");
+    if (!prefs.onboarded) {
+      setRoute("onboarding");
+      return;
+    }
+    const requested = new URLSearchParams(window.location.search).get("screen");
+    setRoute(isDeepLinkableRoute(requested) ? requested : "scan");
   }, [ready, prefs.onboarded]);
 
   const runLookup = useCallback(
@@ -113,7 +158,17 @@ export default function Home() {
       // Snapshot the barcode's last known verdict *before* record() below can
       // dedupe/replace it — a network-error result needs to point at the
       // prior scan, not at the "Unbekannt" entry it is about to create.
-      const previous = history.find((h) => h.barcode === barcode) ?? null;
+      //
+      // F (part 2): scoped to the ACTIVE person's own prior entry, not just
+      // any row for this barcode — Anna's earlier "sicher" must never soften
+      // (or "worsen") what Ben's fresh scan says, and vice versa. See
+      // resolvedHistoryPersonId for how a pre-existing entry with no person
+      // at all (predating this feature) is attributed to `firstPersonId`.
+      const previous =
+        history.find(
+          (h) =>
+            h.barcode === barcode && resolvedHistoryPersonId(h, firstPersonId) === activePerson.id,
+        ) ?? null;
       const r = await lookup(barcode, prefs.selectedAllergens, opts);
       if (r) {
         const verdict = resolveHistoryVerdict(r);
@@ -123,17 +178,69 @@ export default function Home() {
         // instead of relying on a stressed parent's memory.
         const worsened =
           previous && isVerdictWorsening(previous.verdict, verdict) ? previous : null;
-        record(r);
+        record(r, { id: activePerson.id, name: activePerson.name }, firstPersonId);
         // F2: if this barcode is a starred staple, its star only ever shows
         // the latest real check — never the verdict from the moment it was
         // favorited. No-op when it isn't (or is no longer) favorited.
-        recordFavoriteCheck(barcode, verdict, Date.now());
+        //
+        // F: Der Stern bleibt bewusst haushaltsweit — ein Favorit ist ein
+        // Produkt, das die Familie kauft. Der daran hängende Verdict merkt
+        // sich aber, WER geprüft hat, sonst liest Anna Bens Nachprüfung als
+        // eigene Entwarnung. Siehe FavoriteEntry.personId in lib/favorites.ts.
+        recordFavoriteCheck(barcode, verdict, Date.now(), {
+          id: activePerson.id,
+          name: activePerson.name,
+        });
         setLastKnown(previous);
         setWorsenedFrom(worsened);
         setRoute("result");
       }
     },
-    [lookup, record, recordFavoriteCheck, prefs.selectedAllergens, history],
+    [
+      lookup,
+      record,
+      recordFavoriteCheck,
+      prefs.selectedAllergens,
+      history,
+      activePerson.id,
+      activePerson.name,
+      firstPersonId,
+    ],
+  );
+
+  /**
+   * F (part 2): switching who a scan checks against never leaves a stale
+   * result on screen. A verdict already shown was computed against the
+   * *previous* active person's allergens — leaving it up after a switch
+   * would be exactly the false all-clear this feature exists to prevent
+   * (see lib/persons.ts's module comment: switching person always means
+   * "check again", never "reuse", by design — there is deliberately no
+   * simultaneous/union mode). Closing the result (rather than silently
+   * re-running the lookup for the new person) is the predictable, always-
+   * safe choice: an automatic re-check would replay a network call and a
+   * history/favorite write the user never explicitly asked for, right as
+   * they're mid-navigation.
+   *
+   * Two independent things already make this unreachable *today*:
+   * `resultOpen` requires `route === "result"`, which is only ever set by a
+   * fresh runLookup() a few lines up — so neither ScanScreen's own switcher
+   * (this screen) nor ProfileScreen's (which changes the person via its own
+   * setPref calls, not through this function at all) can ever run while a
+   * result is genuinely on screen: ScanScreen's sits behind the same
+   * `inert` wrapper as the rest of the scan screen while the dialog is up,
+   * and reaching ProfileScreen at all requires `route === "profil"`, which
+   * is mutually exclusive with `route === "result"`. The guard below stays
+   * regardless — it is a one-line defense-in-depth against any future
+   * change (a switcher added to the result screen itself, a refactor of the
+   * inert wrapper) quietly reopening this path, not a fix for a reachable
+   * bug today.
+   */
+  const switchActivePerson = useCallback(
+    (id: string) => {
+      setActivePerson(id);
+      setRoute((r) => (r === "result" ? "scan" : r));
+    },
+    [setActivePerson],
   );
 
   const openEntry = useCallback((entry: HistoryEntry) => runLookup(entry.barcode), [runLookup]);
@@ -149,6 +256,19 @@ export default function Home() {
   const openNotfall = useCallback((from: Tab) => {
     setNotfallReturnTab(from);
     setRoute("notfall");
+  }, []);
+
+  // Befund 09: the bottom TabBar's own tab switches (Scan/Verlauf/Profil) use
+  // replaceState, not pushState — they're lateral moves between sibling
+  // screens, not something the back gesture should ever need to undo one at
+  // a time, so they must not grow the history stack the way opening an
+  // overlay does. This mirrors the *current* tab into `?screen=` mainly so
+  // that whichever tab is showing when the user later opens the Allergie-
+  // Karte or Notfallplan becomes the URL those overlays' own pushState calls
+  // (see useHistoryOverlay's `screen` param, below) restore on close.
+  const goTab = useCallback((t: Tab) => {
+    setRoute(t);
+    window.history.replaceState(null, "", `?screen=${t}`);
   }, []);
 
   // If a network-error result is on screen when connectivity returns, retry
@@ -169,9 +289,11 @@ export default function Home() {
   const resultOpen = route === "result" && !!result;
   const karteOpen = route === "karte";
   const notfallOpen = route === "notfall";
+  // Only karte/notfall get a `screen` (Befund 09) — the result dialog is
+  // intentionally left out of the URL entirely (see DEEP_LINKABLE_ROUTES).
   useHistoryOverlay(resultOpen, () => setRoute("scan"));
-  useHistoryOverlay(karteOpen, () => setRoute(cardReturnTab));
-  useHistoryOverlay(notfallOpen, () => setRoute(notfallReturnTab));
+  useHistoryOverlay(karteOpen, () => setRoute(cardReturnTab), "karte");
+  useHistoryOverlay(notfallOpen, () => setRoute(notfallReturnTab), "notfall");
 
   if (!ready || route === null) {
     return (
@@ -204,13 +326,15 @@ export default function Home() {
         P={P}
         history={history}
         favorites={favorites}
+        persons={prefs.persons}
+        activePersonId={prefs.activePersonId}
         onOpen={openEntry}
         onClear={clear}
         onRemove={remove}
         onRestore={restore}
         onToggleFavorite={toggleFavorite}
         onOpenCard={() => openCard("verlauf")}
-        onTab={(t: Tab) => setRoute(t)}
+        onTab={goTab}
       />
     );
   } else if (route === "karte") {
@@ -245,7 +369,7 @@ export default function Home() {
         }}
         onOpenCard={() => openCard("profil")}
         onOpenNotfall={() => openNotfall("profil")}
-        onTab={(t: Tab) => setRoute(t)}
+        onTab={goTab}
         onExport={exportData}
         onImportFile={importData}
       />
@@ -270,12 +394,18 @@ export default function Home() {
             autoStartCamera={prefs.autoStartCamera}
             history={history}
             favorites={favorites}
+            persons={prefs.persons}
+            activePersonId={prefs.activePersonId}
+            onSwitchPerson={switchActivePerson}
+            recallHits={recallHits}
+            onAcknowledgeRecall={acknowledgeRecall}
+            emergencyPlan={prefs.emergencyPlan}
             onDetected={runLookup}
             onOpen={openEntry}
             onOpenFavorite={openFavorite}
             onOpenCard={() => openCard("scan")}
             onOpenNotfall={() => openNotfall("scan")}
-            onTab={(t: Tab) => setRoute(t)}
+            onTab={goTab}
           />
         </div>
         {resultOpen ? (
@@ -295,6 +425,8 @@ export default function Home() {
               sound={prefs.sound}
               loading={loading}
               isFavorite={favorites.some((f) => f.barcode === result.barcode)}
+              activePersonName={activePerson.name}
+              personCount={prefs.persons.length}
               onToggleFavorite={() =>
                 toggleFavorite({
                   barcode: result.barcode,

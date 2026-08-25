@@ -13,6 +13,7 @@ vi.mock("@/components/screens/ScanScreen", () => ({
   default: (props: {
     onDetected: (barcode: string) => void;
     onTab: (t: "scan" | "verlauf" | "profil") => void;
+    onSwitchPerson: (id: string) => void;
   }) => (
     <div data-testid="scan-screen-stub">
       <button type="button" onClick={() => props.onDetected("4011200296908")}>
@@ -20,6 +21,14 @@ vi.mock("@/components/screens/ScanScreen", () => ({
       </button>
       <button type="button" onClick={() => props.onTab("verlauf")}>
         goto verlauf
+      </button>
+      {/* F (part 2): the real switcher only renders once persons.length > 1
+          (see ScanScreen.test.tsx for that behavior); this stub always
+          exposes the callback so page.tsx's own reaction to a switch —
+          closing a stale result — can be tested independent of the
+          switcher's own visibility rule. */}
+      <button type="button" onClick={() => props.onSwitchPerson("some-other-person")}>
+        simulate switch person
       </button>
     </div>
   ),
@@ -31,6 +40,33 @@ function jsonResponse(body: ProductResult) {
   return { json: async () => body, headers: new Headers() } as unknown as Response;
 }
 
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.toString();
+  return (input as Request).url ?? String(input);
+}
+
+/**
+ * F5 (Rückruf-Wächter): components/useRecallWatch.ts fires its own
+ * POST /api/recalls once a favorite/history entry exists to watch — which,
+ * after the very first recorded scan below, is every test in this file.
+ * Routing by URL keeps that background poll from silently consuming a
+ * `mockResolvedValueOnce` meant for the next *product* lookup; it always
+ * gets a benign "nothing found" response so it never interferes with the
+ * ordinary lookup queue under test.
+ */
+function mockProductFetchQueue(...responses: ProductResult[]): void {
+  let i = 0;
+  vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+    if (requestUrl(input).includes("/api/recalls")) {
+      return { ok: true, json: async () => ({ status: "ok", results: {} }) } as unknown as Response;
+    }
+    const body = responses[Math.min(i, responses.length - 1)]!;
+    i++;
+    return jsonResponse(body);
+  });
+}
+
 // useHistoryOverlay (UX9) pops its own pushState entry via history.back()
 // whenever an overlay closes by any means other than the back gesture
 // itself (a button tap) — jsdom fires the resulting popstate asynchronously,
@@ -38,6 +74,13 @@ function jsonResponse(body: ProductResult) {
 // Made synchronous here, file-wide, so every test's history interactions
 // stay self-contained regardless of run order.
 beforeEach(() => {
+  // Befund 09: page.tsx now writes real query params via
+  // replaceState/pushState (tab switches, karte/notfall). jsdom's
+  // location/history persist across tests within this file (one jsdom
+  // window per file, not per test), so start every test at a clean "/" —
+  // otherwise a `?screen=` written by one test leaks into the next test's
+  // bootstrap read.
+  window.history.replaceState(null, "", "/");
   vi.spyOn(window.history, "back").mockImplementation(() => {
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
@@ -93,25 +136,22 @@ describe("Home result dialog", () => {
   });
 
   it("does not warn on a first scan, but warns when a later scan of the same barcode gets worse", async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(
-        jsonResponse({
-          barcode: "4011200296908",
-          productName: "Riegel",
-          brand: "ACME",
-          status: "NEIN",
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse({
-          barcode: "4011200296908",
-          productName: "Riegel",
-          brand: "ACME",
-          status: "JA",
-          found: "Erdnüsse",
-          ingredients: "Erdnüsse",
-        }),
-      );
+    mockProductFetchQueue(
+      {
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "NEIN",
+      },
+      {
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "JA",
+        found: "Erdnüsse",
+        ingredients: "Erdnüsse",
+      },
+    );
 
     render(<Home />);
 
@@ -137,6 +177,58 @@ describe("Home result dialog", () => {
     // Informational only: the worsening note is not the only thing that
     // changed — the verdict itself (a real hit) still drives the alarm below.
     expect(screen.getByText("Erdnuss enthalten.")).toBeInTheDocument();
+  });
+});
+
+describe("Home person switch closes a stale result (F part 2)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    __clearProductLookupCache();
+  });
+
+  it("closes an open result rather than leaving a stale verdict up after a person switch", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "NEIN",
+      }),
+    );
+
+    render(<Home />);
+    await userEvent.click(await screen.findByText("simulate detect"));
+    await screen.findByRole("dialog");
+
+    await userEvent.click(screen.getByText("simulate switch person"));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("scan-screen-stub")).toBeInTheDocument();
+  });
+
+  it("does nothing surprising when switching person with no result open", async () => {
+    render(<Home />);
+    await screen.findByText("simulate detect");
+
+    await userEvent.click(screen.getByText("simulate switch person"));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("scan-screen-stub")).toBeInTheDocument();
   });
 });
 
@@ -284,5 +376,142 @@ describe("Home browser-history integration (UX9)", () => {
 
     expect(() => fireEvent.popState(window)).not.toThrow();
     expect(screen.getByTestId("scan-screen-stub")).toBeInTheDocument();
+  });
+});
+
+describe("Home URL routing (Befund 09)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    __clearProductLookupCache();
+  });
+
+  function stubMatchMedia() {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+  }
+
+  it("boots straight into the tab named by a ?screen= deep link", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+    window.history.replaceState(null, "", "/?screen=profil");
+
+    render(<Home />);
+
+    expect(await screen.findByRole("heading", { name: "Dein Profil" })).toBeInTheDocument();
+    // Didn't fall through to the default Scan screen.
+    expect(screen.queryByTestId("scan-screen-stub")).not.toBeInTheDocument();
+  });
+
+  it("falls back to Scan for an unknown ?screen= value", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+    window.history.replaceState(null, "", "/?screen=quatsch");
+
+    render(<Home />);
+
+    expect(await screen.findByTestId("scan-screen-stub")).toBeInTheDocument();
+  });
+
+  it("falls back to Scan when no ?screen= is present at all", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+    // beforeEach already reset location to "/", nothing more to arrange.
+
+    render(<Home />);
+
+    expect(await screen.findByTestId("scan-screen-stub")).toBeInTheDocument();
+  });
+
+  it("shows onboarding for ?screen=notfall when the household hasn't onboarded yet", async () => {
+    // No prefs written at all: DEFAULT_PREFS.onboarded is false, which must
+    // win over the deep link — a link can't skip the one-time gate.
+    stubMatchMedia();
+    window.history.replaceState(null, "", "/?screen=notfall");
+
+    render(<Home />);
+
+    expect(await screen.findByText("willkommen")).toBeInTheDocument();
+    expect(screen.queryByText("Notfallplan")).not.toBeInTheDocument();
+  });
+
+  it("writes the URL via replaceState on a tab switch, without growing the back-stack", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+    const pushSpy = vi.spyOn(window.history, "pushState");
+    const replaceSpy = vi.spyOn(window.history, "replaceState");
+
+    render(<Home />);
+    await userEvent.click(await screen.findByText("goto verlauf"));
+
+    expect(await screen.findByRole("heading", { name: "Verlauf" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?screen=verlauf");
+    // A tab switch is a lateral move, not something the back gesture should
+    // ever have to undo — it must never push a new history entry.
+    expect(pushSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).toHaveBeenCalled();
+  });
+
+  it("mirrors the allergy card into the URL while open and reverts it on Zurück", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+
+    render(<Home />);
+    await userEvent.click(await screen.findByText("goto verlauf"));
+    expect(window.location.search).toBe("?screen=verlauf");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Allergie-Karte öffnen" }));
+    expect(await screen.findByText("Allergie-Karte")).toBeInTheDocument();
+    expect(window.location.search).toBe("?screen=karte");
+
+    await userEvent.click(screen.getByRole("button", { name: "Zurück" }));
+    expect(window.location.search).toBe("?screen=verlauf");
+  });
+
+  it("mirrors the allergy card into the URL and reverts it on the back gesture too", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+
+    render(<Home />);
+    await userEvent.click(await screen.findByText("goto verlauf"));
+    await userEvent.click(await screen.findByRole("button", { name: "Allergie-Karte öffnen" }));
+    expect(window.location.search).toBe("?screen=karte");
+
+    fireEvent.popState(window);
+
+    // The gesture closes exactly one level — back on Verlauf, URL restored.
+    expect(screen.getByRole("heading", { name: "Verlauf" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?screen=verlauf");
+  });
+
+  it("never puts the result dialog into the URL", async () => {
+    window.localStorage.setItem("peanot.prefs.v1", JSON.stringify({ onboarded: true }));
+    stubMatchMedia();
+    vi.stubGlobal("fetch", vi.fn());
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        barcode: "4011200296908",
+        productName: "Riegel",
+        brand: "ACME",
+        status: "NEIN",
+      }),
+    );
+
+    render(<Home />);
+    const searchBeforeResult = window.location.search;
+
+    await userEvent.click(await screen.findByText("simulate detect"));
+    await screen.findByRole("dialog");
+
+    expect(window.location.search).toBe(searchBeforeResult);
   });
 });

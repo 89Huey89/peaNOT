@@ -25,6 +25,8 @@ function renderResult(
     tracesStrict?: boolean;
     isFavorite?: boolean;
     onToggleFavorite?: () => void;
+    activePersonName?: string;
+    personCount?: number;
   } = {},
 ) {
   render(
@@ -39,6 +41,10 @@ function renderResult(
       sound={false}
       loading={false}
       isFavorite={opts.isFavorite ?? false}
+      // F (part 2): single-person household by default — every existing
+      // test in this file exercises the unchanged, personCount === 1 case.
+      activePersonName={opts.activePersonName ?? "Ich"}
+      personCount={opts.personCount ?? 1}
       onToggleFavorite={opts.onToggleFavorite ?? (() => {})}
       onBack={() => {}}
       onScanAgain={() => {}}
@@ -201,6 +207,242 @@ describe("ResultScreen recall comparison", () => {
     renderResult();
 
     expect(screen.queryByText(/rückruf-abgleich/)).not.toBeInTheDocument();
+  });
+
+  // Befund 01: on a phone the stamp alone can fill the screen, so a recall
+  // card rendered *after* it (as it used to be) was invisible until the user
+  // scrolled past a reassuring green stamp. It must render first, and the
+  // stamp/headline/kicker must stop reading as an all-clear once a recall
+  // might apply — without touching the computed verdict itself.
+  it("renders the recall card before the stamp, and drops the reassuring wording, on a safe verdict with a recall hit", () => {
+    renderResult({
+      barcode: "4011200296908",
+      productName: "Keks",
+      brand: "ACME",
+      status: "NEIN",
+      ingredients: "Mehl",
+      recall: {
+        status: "ok",
+        matches: [
+          {
+            title: "Keks, 200 g",
+            link: "https://www.lebensmittelwarnung.de/y",
+            publishedDate: 1_763_000_000_000,
+          },
+        ],
+      },
+    });
+
+    const recallHeading = screen.getByText("Rückruf könnte dieses Produkt betreffen");
+    const stampWord = document.querySelector('[data-stamp="word"]');
+    expect(stampWord).not.toBeNull();
+    // DOCUMENT_POSITION_FOLLOWING on the stamp (relative to the recall
+    // heading) means the recall card comes first in the DOM.
+    expect(
+      recallHeading.compareDocumentPosition(stampWord as Node) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // Neither the top headline nor the stamp's kicker may sound reassuring
+    // once an official recall might apply to this product.
+    expect(
+      screen.getByText("Kein Treffer in den Daten — aber ein Rückruf könnte passen."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Keine Hinweise in den Daten gefunden."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("kein treffer · rückruf prüfen")).toBeInTheDocument();
+
+    // The computed verdict itself is untouched: the title still reads the
+    // plain "Keine Erdnuss." verdict, not a softened or altered one.
+    expect(screen.getByText("Keine Erdnuss.")).toBeInTheDocument();
+  });
+
+  // The wording alone is not enough: at arm's length in a shop the card reads
+  // as a color long before it reads as a sentence. A green frame around an
+  // amber stamp still says "safe", so the whole card has to leave green.
+  it("drops the green card entirely on a safe verdict with a recall hit", () => {
+    renderResult({
+      barcode: "4011200296908",
+      productName: "Keks",
+      brand: "ACME",
+      status: "NEIN",
+      ingredients: "Mehl",
+      recall: {
+        status: "ok",
+        matches: [
+          {
+            title: "Keks, 200 g",
+            link: "https://www.lebensmittelwarnung.de/y",
+            publishedDate: 1_763_000_000_000,
+          },
+        ],
+      },
+    });
+
+    const card = document.querySelector("[data-verdict-card]") as HTMLElement | null;
+    expect(card).not.toBeNull();
+    // PAL_LIGHT.GREEN / AMBER, as jsdom serializes them — asserted on the
+    // concrete values so a palette edit that silently re-greens this card
+    // fails here instead of on a shelf.
+    expect(card!.style.border).not.toContain("rgb(31, 107, 58)");
+    expect(card!.style.border).toContain("rgb(180, 107, 4)");
+
+    // Same for the kicker text beside the stamp: AMBER_TEXT, never green.
+    const kicker = screen.getByText("kein treffer · rückruf prüfen");
+    expect(kicker).toHaveStyle({ color: "rgb(138, 86, 6)" });
+  });
+
+  it("keeps the green card on a clean result with no recall match", () => {
+    renderResult({
+      barcode: "4011200296908",
+      productName: "Keks",
+      brand: "ACME",
+      status: "NEIN",
+      ingredients: "Mehl",
+      recall: { status: "ok", matches: [] },
+    });
+
+    const card = document.querySelector("[data-verdict-card]") as HTMLElement | null;
+    expect(card).not.toBeNull();
+    expect(card!.style.border).toContain("rgb(31, 107, 58)");
+  });
+
+  it("keeps the original order and wording when no recall matches", () => {
+    renderResult({
+      barcode: "4011200296908",
+      productName: "Keks",
+      brand: "ACME",
+      status: "NEIN",
+      ingredients: "Mehl",
+      recall: { status: "ok", matches: [] },
+    });
+
+    expect(screen.getByText("Keine Hinweise in den Daten gefunden.")).toBeInTheDocument();
+    expect(screen.getByText("keine erdnuss")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Rückruf könnte dieses Produkt betreffen"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not change the verdict shown alongside a worsening banner when a recall also matches", () => {
+    const priorSafe: HistoryEntry = {
+      id: "h_1_4011200296908",
+      ts: Date.now() - 86_400_000,
+      barcode: "4011200296908",
+      name: "Keks",
+      brand: "ACME",
+      verdict: "safe",
+    };
+    renderResult(
+      {
+        barcode: "4011200296908",
+        productName: "Keks",
+        brand: "ACME",
+        status: "NEIN",
+        ingredients: "Mehl",
+        recall: {
+          status: "ok",
+          matches: [{ title: "Keks, 200 g", link: null, publishedDate: null }],
+        },
+      },
+      null,
+      { worsenedFrom: priorSafe },
+    );
+
+    // Same verdict label before and after — a recall hit never feeds back
+    // into the verdict computation or the history comparison.
+    expect(screen.getByText("Keine Erdnuss.")).toBeInTheDocument();
+    expect(screen.getAllByText("Sicher").length).toBeGreaterThan(0);
+  });
+});
+
+describe("ResultScreen long product name (F10)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  const LONG_NAME =
+    "Bio-Vollkorn-Dinkel-Knusper-Müsli mit Mandeln, Cranberries und Kürbiskernen, Familienpackung 750 g";
+
+  it("offers a collapsed tap-to-expand control for a long product name", () => {
+    renderResult({ ...CLEAN_RESULT, productName: LONG_NAME });
+
+    const toggle = screen.getByRole("button", {
+      name: /Vollständigen Produktnamen anzeigen/,
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // The full name is still in the DOM (only visually clamped), so it's
+    // still discoverable via text query even before expanding.
+    expect(screen.getByText(LONG_NAME)).toBeInTheDocument();
+  });
+
+  it("expands the full name on tap, and re-collapses for a new product", () => {
+    const { rerender } = render(
+      <ResultScreen
+        P={palette("mustard")}
+        result={{ ...CLEAN_RESULT, productName: LONG_NAME }}
+        lastKnown={null}
+        worsenedFrom={null}
+        selectedAllergens={["peanut"]}
+        tracesStrict={false}
+        haptic={false}
+        sound={false}
+        loading={false}
+        isFavorite={false}
+        activePersonName="Ich"
+        personCount={1}
+        onToggleFavorite={() => {}}
+        onBack={() => {}}
+        onScanAgain={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Vollständigen Produktnamen anzeigen/ }),
+    );
+    expect(
+      screen.getByRole("button", { name: /Produktname einklappen/ }),
+    ).toHaveAttribute("aria-expanded", "true");
+
+    // A new product (different result) collapses it again.
+    rerender(
+      <ResultScreen
+        P={palette("mustard")}
+        result={{ ...CLEAN_RESULT, barcode: "4011200296908", productName: LONG_NAME }}
+        lastKnown={null}
+        worsenedFrom={null}
+        selectedAllergens={["peanut"]}
+        tracesStrict={false}
+        haptic={false}
+        sound={false}
+        loading={false}
+        isFavorite={false}
+        activePersonName="Ich"
+        personCount={1}
+        onToggleFavorite={() => {}}
+        onBack={() => {}}
+        onScanAgain={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Vollständigen Produktnamen anzeigen/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("shows no expand control for a short product name", () => {
+    renderResult({ ...CLEAN_RESULT, productName: "Kekse" });
+
+    expect(
+      screen.queryByRole("button", { name: /Produktnamen anzeigen/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Produktname einklappen/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Kekse")).toBeInTheDocument();
   });
 });
 
@@ -644,6 +886,88 @@ describe("ResultScreen favorite star (F2)", () => {
   });
 });
 
+// F-E: no lib/photos mocking here on purpose — jsdom's actual absence of
+// IndexedDB, createImageBitmap and URL.createObjectURL *is* the important
+// case (see lib/photos.test.ts and components/usePhoto.test.ts for the
+// isolated storage/hook coverage). These tests confirm the real, unmocked
+// stack degrades cleanly inside the result screen instead of crashing it.
+describe("ResultScreen ingredient photo (F-E)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("offers the photo section for a clean (green) result too, not just KEINE_DATEN", () => {
+    renderResult();
+
+    expect(screen.getByText("foto · zutatenliste")).toBeInTheDocument();
+  });
+
+  it("offers the photo section on a real hit (JA) as well — documenting is allowed for every verdict", () => {
+    renderResult({
+      barcode: "20137946",
+      productName: "Erdnuss-Riegel",
+      brand: "ACME",
+      status: "JA",
+      ingredients: "Erdnüsse",
+      found: "Erdnüsse",
+    });
+
+    expect(screen.getByText("foto · zutatenliste")).toBeInTheDocument();
+  });
+
+  it("shows the capture control and no image when no photo is stored", () => {
+    renderResult();
+
+    expect(
+      screen.getByRole("button", { name: "Zutatenliste fotografieren" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByAltText(/Zutatenliste/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Neu aufnehmen/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Löschen$/)).not.toBeInTheDocument();
+  });
+
+  it("the capture button opens the camera/file picker", () => {
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click");
+    renderResult();
+
+    fireEvent.click(screen.getByRole("button", { name: "Zutatenliste fotografieren" }));
+
+    expect(clickSpy).toHaveBeenCalled();
+    clickSpy.mockRestore();
+  });
+
+  it("the hidden file input is set up for iOS's camera capture", () => {
+    renderResult();
+
+    const input = screen.getByLabelText("Foto der Zutatenliste aufnehmen");
+    expect(input).toHaveAttribute("type", "file");
+    expect(input).toHaveAttribute("accept", "image/*");
+    expect(input).toHaveAttribute("capture", "environment");
+  });
+
+  // The important jsdom case: no IndexedDB at all here, so the save must
+  // fail — but visibly (a loading beat, then an honest error), never by
+  // throwing and taking the whole result screen down with it.
+  it("shows a loading state, then a visible (non-throwing) error when saving fails", async () => {
+    renderResult();
+    const file = new File(["zutaten-foto"], "zutaten.jpg", { type: "image/jpeg" });
+    const input = screen.getByLabelText("Foto der Zutatenliste aufnehmen");
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(screen.getByText("wird verkleinert…")).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(screen.getByText(/Foto konnte nicht gespeichert werden/)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("wird verkleinert…")).not.toBeInTheDocument();
+    // The rest of the result screen is unaffected by the failed save.
+    expect(screen.getByText("Keine Erdnuss in den Zutaten.")).toBeInTheDocument();
+  });
+});
+
 describe("ResultScreen share (F6)", () => {
   afterEach(() => {
     Reflect.deleteProperty(navigator, "share");
@@ -727,5 +1051,46 @@ describe("ResultScreen share (F6)", () => {
     const text = (share.mock.calls[0]![0] as ShareData).text as string;
     expect(text).toContain("Erdnuss enthalten");
     expect(text).not.toMatch(/\bsicher\b/i);
+  });
+});
+
+describe("ResultScreen person attribution (F part 2)", () => {
+  it("does not mention any person at all with a single-person household", () => {
+    renderResult(CLEAN_RESULT, null, { personCount: 1, activePersonName: "Ich" });
+
+    expect(screen.queryByText(/Für Ich:/)).not.toBeInTheDocument();
+  });
+
+  it("names the active person right next to the verdict once a second person exists", () => {
+    renderResult(CLEAN_RESULT, null, { personCount: 2, activePersonName: "Ben" });
+
+    // Present twice by design: once in the visible verdict card, once in the
+    // assertive aria-live announcement (same pattern other tests in this
+    // file use for text that is deliberately duplicated for screen readers).
+    expect(screen.getAllByText(/Für Ben:/).length).toBeGreaterThan(0);
+  });
+
+  it("carries the person's name into the shared text once a second person exists", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    renderResult(CLEAN_RESULT, null, { personCount: 2, activePersonName: "Ben" });
+    fireEvent.click(screen.getByRole("button", { name: "Ergebnis teilen" }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    const text = (share.mock.calls[0]![0] as ShareData).text as string;
+    expect(text).toContain("Für Ben:");
+  });
+
+  it("never puts a person's name into the shared text for a single-person household", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    renderResult(CLEAN_RESULT, null, { personCount: 1, activePersonName: "Ich" });
+    fireEvent.click(screen.getByRole("button", { name: "Ergebnis teilen" }));
+
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    const text = (share.mock.calls[0]![0] as ShareData).text as string;
+    expect(text).not.toContain("Für Ich:");
   });
 });

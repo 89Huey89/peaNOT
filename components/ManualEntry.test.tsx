@@ -42,6 +42,21 @@ describe("ManualEntry", () => {
 
   it("is disabled while a lookup is in flight", () => {
     render(<ManualEntry onSubmit={vi.fn()} disabled />);
-    expect(screen.getByRole("button", { name: "Prüfen" })).toBeDisabled();
+    // Befund 05: while disabled it relabels to a busy state rather than
+    // staying "Prüfen" — the button itself is the loading indicator, since
+    // the scanner box's own spinner sits behind this sheet while it's open.
+    expect(screen.queryByRole("button", { name: "Prüfen" })).not.toBeInTheDocument();
+  });
+
+  it("shows a busy state on the submit button and announces it, while a lookup is in flight (Befund 05)", () => {
+    render(<ManualEntry onSubmit={vi.fn()} disabled />);
+
+    const button = screen.getByRole("button", { name: /Prüfe/ });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+    // Belt-and-suspenders for VoiceOver: an explicit live region, in case
+    // focus isn't sitting on the button (e.g. the sheet was opened onto an
+    // already-in-flight lookup).
+    expect(screen.getByRole("status", { name: /Prüfe Produkt/ })).toBeInTheDocument();
   });
 });
