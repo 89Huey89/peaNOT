@@ -52,6 +52,29 @@ function networkErrorResult(barcode: string): ProductResult {
   };
 }
 
+/**
+ * Builds the fail-safe KEINE_DATEN result used when the server reaches an
+ * answer but refuses the request outright (currently: a 400 for a barcode
+ * that isn't 8–14 digits — see app/api/product/[barcode]/route.ts). That
+ * response body has no `status`/`caveats`/... fields at all, so it must never
+ * be cast straight to ProductResult and rendered — see the `!res.ok` check
+ * below. Deliberately NOT networkErrorResult/`networkError: true`: the
+ * request did reach the server, retrying the identical barcode on
+ * reconnect (app/page.tsx's online-listener effect) would only repeat the
+ * same 400, and "Gerade keine Verbindung" would misreport why there's no
+ * verdict.
+ */
+function invalidResponseResult(barcode: string): ProductResult {
+  return {
+    barcode,
+    productName: null,
+    brand: null,
+    status: "KEINE_DATEN",
+    message:
+      "Das ist kein gültiger Produkt-Barcode – deine Allergene können nicht ausgeschlossen werden.",
+  };
+}
+
 export function useProductLookup() {
   const [state, setState] = useState<LookupState>({ loading: false, result: null });
   const requestIdRef = useRef(0);
@@ -106,6 +129,19 @@ export function useProductLookup() {
           ...(opts.fresh ? { cache: "no-store" as RequestCache } : {}),
         },
       );
+      if (requestId !== requestIdRef.current) return null;
+      if (!res.ok) {
+        // The route only ever answers a real check with 200 (even its own
+        // KEINE_DATEN/error outcomes) — a non-ok status means the body is
+        // NOT a ProductResult (e.g. `{ error: "invalid_barcode" }`) and must
+        // never be cast/rendered as one, which used to crash the whole app
+        // (Cannot read properties of undefined) the moment a scan or a
+        // legacy history/favorite entry produced a barcode outside the
+        // 8–14-digit range the server accepts.
+        const fallback = invalidResponseResult(barcode);
+        setState({ loading: false, result: fallback });
+        return fallback;
+      }
       const data = (await res.json()) as ProductResult;
       if (requestId !== requestIdRef.current) return null;
       // Cache honesty: the service worker stamps an offline cache hit with

@@ -37,7 +37,7 @@ vi.mock("@/components/screens/ScanScreen", () => ({
 import Home from "@/app/page";
 
 function jsonResponse(body: ProductResult) {
-  return { json: async () => body, headers: new Headers() } as unknown as Response;
+  return { ok: true, json: async () => body, headers: new Headers() } as unknown as Response;
 }
 
 function requestUrl(input: RequestInfo | URL): string {

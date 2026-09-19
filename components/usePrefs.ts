@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Accent, ThemeMode } from "@/lib/theme";
 import type { FontScale } from "@/lib/fontScale";
-import { DEFAULT_EMERGENCY_PLAN, type EmergencyPlan } from "@/lib/emergency";
+import { DEFAULT_EMERGENCY_PLAN, normalizeEmergencyPlan, type EmergencyPlan } from "@/lib/emergency";
 import {
   DEFAULT_PERSON_NAME,
   addPersonToState,
@@ -128,7 +128,23 @@ function load(): Prefs {
     // upgrade-path migration AND a standing defence against corrupted
     // storage, and must never be skipped just because the stored file
     // already "looks new enough".
-    return withValidPersonsState(merged, parsed);
+    return {
+      ...withValidPersonsState(merged, parsed),
+      // Same reasoning as persons above, for the same reason: `emergencyPlan`
+      // is a nested object, so the top-level spread above never backfills a
+      // *missing* pens/contacts on an otherwise-present plan (only a wholly
+      // absent `emergencyPlan` key falls back to DEFAULT_PREFS's). A plan
+      // saved before those fields existed (see normalizeEmergencyPlan's own
+      // doc comment) used to reach ScanScreen's pen-expiry warning raw —
+      // which iterates `emergencyPlan.pens` unconditionally — and crashed
+      // the whole app on every single launch for anyone who had confirmed a
+      // plan before "pens" shipped. EmergencyScreen already normalizes its
+      // own `plan` prop locally; this is the same fix applied once at the
+      // source so every current and future consumer of prefs.emergencyPlan
+      // gets an already-safe value instead of relying on the reader to
+      // remember to call normalizeEmergencyPlan.
+      emergencyPlan: normalizeEmergencyPlan(merged.emergencyPlan),
+    };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -211,6 +227,9 @@ export function usePrefs() {
         );
         next = { ...next, persons, selectedAllergens: incoming.selectedAllergens };
       }
+      // Same defense as load() above: an export written before pens/contacts
+      // existed can carry an emergencyPlan missing those fields.
+      next = { ...next, emergencyPlan: normalizeEmergencyPlan(next.emergencyPlan) };
       persist(next);
       return next;
     });
