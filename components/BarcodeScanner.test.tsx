@@ -104,6 +104,32 @@ describe("BarcodeScanner", () => {
     expect(onDetected).toHaveBeenCalledWith("4011200296908");
   });
 
+  it("ignores a decode outside the 8–14 digit product-barcode range and keeps scanning", async () => {
+    // CODE_128 (kept in POSSIBLE_FORMATS for real in-store barcodes) can
+    // decode a shelf-edge/loyalty/coupon code of any length. Forwarding one
+    // to onDetected used to reach the API's 400 response and crash the whole
+    // app (see useProductLookup.ts) — the scanner must drop it itself, same
+    // as ManualEntry already refuses to submit an out-of-range value.
+    let capturedCallback: DecodeCallback = () => {};
+    decodeMock.mockImplementation(async (_constraints, _video, cb: DecodeCallback) => {
+      capturedCallback = cb;
+      return { stop: vi.fn() };
+    });
+
+    const onDetected = vi.fn();
+    render(<BarcodeScanner {...baseProps} onDetected={onDetected} autoStart />);
+    await waitFor(() => expect(decodeMock).toHaveBeenCalled());
+    await waitForArm();
+
+    capturedCallback({ getText: () => "1234" }); // too short
+    capturedCallback({ getText: () => "123456789012345" }); // too long
+    expect(onDetected).not.toHaveBeenCalled();
+
+    // A real product barcode right after is still picked up normally.
+    capturedCallback({ getText: () => "4011200296908" });
+    expect(onDetected).toHaveBeenCalledWith("4011200296908");
+  });
+
   it("starts any-orientation, high-resolution, autofocusing capture on tap", async () => {
     let captured: MediaStreamConstraints | undefined;
     decodeMock.mockImplementation(

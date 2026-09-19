@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
 import type { IScannerControls } from "@zxing/browser";
-import { sanitizeBarcode } from "@/lib/barcode";
+import { isValidBarcode, sanitizeBarcode } from "@/lib/barcode";
 import { shouldAcceptScan, type LastScan } from "@/lib/scan";
 import { tick, unlockAudio, vibrate } from "@/lib/feedback";
 
@@ -139,7 +139,14 @@ export default function BarcodeScanner({
         (result) => {
           if (pausedRef.current || frozenRef.current || !result || !armedRef.current) return;
           const code = sanitizeBarcode(result.getText());
-          if (code === "") return;
+          // CODE_128 stays in POSSIBLE_FORMATS above for the in-store
+          // barcodes that use it, but unlike EAN/UPC it can encode a code of
+          // any length — a shelf-edge, loyalty, or coupon code caught by
+          // mistake must never reach onDetected. Same 8–14-digit rule
+          // ManualEntry already enforces before its own submit is enabled;
+          // the API route rejects anything else with a 400 that is not a
+          // ProductResult (see useProductLookup.ts's `!res.ok` handling).
+          if (code === "" || !isValidBarcode(code)) return;
           const now = Date.now();
           if (!shouldAcceptScan(lastScanRef.current, code, now)) return;
           lastScanRef.current = { code, time: now };

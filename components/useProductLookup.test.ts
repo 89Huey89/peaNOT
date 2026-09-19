@@ -16,8 +16,22 @@ function deferred<T>() {
 
 function jsonResponse(body: ProductResult, headers?: Record<string, string>) {
   return {
+    ok: true,
+    status: 200,
     json: async () => body,
     headers: headers ? new Headers(headers) : undefined,
+  } as unknown as Response;
+}
+
+/** A rejected request — the shape .../api/product/[barcode]/route.ts sends
+ * for a 400 (e.g. `{ error: "invalid_barcode" }`), which is NOT a
+ * ProductResult and must never be treated like one. */
+function errorResponse(status: number, body: unknown) {
+  return {
+    ok: false,
+    status,
+    json: async () => body,
+    headers: undefined,
   } as unknown as Response;
 }
 
@@ -78,6 +92,43 @@ describe("useProductLookup", () => {
     expect(result.current.result?.status).not.toBe("NEIN");
     // Marks it as a client-side fallback, distinct from a server KEINE_DATEN.
     expect(result.current.result?.networkError).toBe(true);
+  });
+
+  it("falls back to a safe KEINE_DATEN result instead of rendering a non-ok response body (Cannot read properties of undefined crash)", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      errorResponse(400, { error: "invalid_barcode" }),
+    );
+
+    const { result } = renderHook(() => useProductLookup());
+    await act(async () => {
+      await result.current.lookup("123");
+    });
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.result).toMatchObject({ barcode: "123", status: "KEINE_DATEN" });
+    // Distinct from a real network failure: retrying the identical barcode on
+    // reconnect (app/page.tsx's online-listener) would just repeat the same
+    // 400, so this must not set networkError.
+    expect(result.current.result?.networkError).toBeUndefined();
+  });
+
+  it("never caches a non-ok response under the barcode's key", async () => {
+    vi.mocked(fetch).mockResolvedValue(errorResponse(400, { error: "invalid_barcode" }));
+
+    const { result } = renderHook(() => useProductLookup());
+    await act(async () => {
+      await result.current.lookup("123");
+    });
+    vi.mocked(fetch).mockClear();
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ barcode: "123", productName: "Bar", brand: null, status: "NEIN" }),
+    );
+    await act(async () => {
+      await result.current.lookup("123");
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(result.current.result?.status).toBe("NEIN");
   });
 
   it("sends ?fresh=1 with cache:'no-store' for a fresh lookup", async () => {
