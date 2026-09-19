@@ -254,7 +254,13 @@ export default function ScanScreen({
     const today = new Date();
     let expired = 0;
     let soon = 0;
-    for (const pen of emergencyPlan.pens) {
+    // usePrefs normalizes emergencyPlan on every load, so `pens` should
+    // always be an array by the time it gets here — `?? []` is defense in
+    // depth, not a substitute for that: a plan saved before `pens` existed
+    // reaching this loop raw is exactly what used to throw "pens is not
+    // iterable" on every single launch (see normalizeEmergencyPlan's doc
+    // comment in lib/emergency.ts).
+    for (const pen of emergencyPlan.pens ?? []) {
       const status = getPenStatus(pen.expiresOn, today);
       if (status === "expired") expired++;
       else if (status === "soon") soon++;

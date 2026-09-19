@@ -139,6 +139,55 @@ describe("usePrefs emergencyPlan (F4)", () => {
     expect(result.current.prefs.emergencyPlan.confirmed).toBe(false);
     expect(result.current.prefs.emergencyPlan.steps.length).toBeGreaterThan(0);
   });
+
+  it("backfills pens/contacts on a stored emergencyPlan saved before those fields existed", async () => {
+    // The exact shape EmergencyPlan had right after it shipped (steps/notes/
+    // confirmed only) — no `pens`/`contacts` keys at all. Unlike a wholly
+    // absent `emergencyPlan` (previous test), this key IS present, so the
+    // top-level `{...DEFAULT_PREFS, ...parsed}` spread in load() never
+    // backfills it — reached ScanScreen's pen-expiry warning raw, which
+    // iterates `emergencyPlan.pens` unconditionally and crashed the whole
+    // app (TypeError: pens is not iterable) on every single launch for
+    // anyone who had confirmed a plan before "pens" shipped.
+    window.localStorage.setItem(
+      "peanot.prefs.v1",
+      JSON.stringify({
+        onboarded: true,
+        emergencyPlan: {
+          steps: ["Adrenalin-Pen anwenden.", "112 anrufen."],
+          notes: "Jext 150 µg im Rucksack.",
+          confirmed: true,
+        },
+      }),
+    );
+
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    expect(result.current.prefs.emergencyPlan.pens).toEqual([]);
+    expect(result.current.prefs.emergencyPlan.contacts).toEqual([]);
+    // The rest of the plan survives untouched.
+    expect(result.current.prefs.emergencyPlan.confirmed).toBe(true);
+    expect(result.current.prefs.emergencyPlan.notes).toBe("Jext 150 µg im Rucksack.");
+  });
+
+  it("backfills pens/contacts on an imported backup's pre-pens emergencyPlan", async () => {
+    const { result } = renderHook(() => usePrefs());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => {
+      result.current.importPrefs({
+        emergencyPlan: {
+          steps: ["Adrenalin-Pen anwenden."],
+          notes: "",
+          confirmed: true,
+        } as unknown as Parameters<typeof result.current.importPrefs>[0]["emergencyPlan"],
+      });
+    });
+
+    expect(result.current.prefs.emergencyPlan.pens).toEqual([]);
+    expect(result.current.prefs.emergencyPlan.contacts).toEqual([]);
+  });
 });
 
 describe("usePrefs importPrefs (F1)", () => {
